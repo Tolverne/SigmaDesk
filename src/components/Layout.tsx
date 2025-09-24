@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import RLSErrorBanner from './RLSErrorBanner';
 
 interface LayoutProps {
   children: React.ReactNode;
 }
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, signOut, hasRLSIssue } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -106,8 +107,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     )}
                     
                     {!profile && (
-                      <span className="px-2 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800">
-                        SETUP NEEDED
+                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                        hasRLSIssue 
+                          ? 'bg-red-100 text-red-800' 
+                          : 'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {hasRLSIssue ? 'DB ISSUE' : 'SETUP NEEDED'}
                       </span>
                     )}
                   </div>
@@ -137,6 +142,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Show RLS error banner when database issues are detected */}
+        <RLSErrorBanner />
+        
         {children}
       </main>
 
@@ -147,7 +155,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             <span>Development Mode</span>
             <span>
               User: {user ? '✅' : '❌'} | 
-              Profile: {profile ? `✅ ${profile.role}` : '❌'} | 
+              Profile: {profile ? `✅ ${profile.role}` : hasRLSIssue ? '🚨 RLS Issue' : '❌'} | 
               Path: {location.pathname}
             </span>
           </div>

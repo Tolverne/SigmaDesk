@@ -1,10 +1,9 @@
-// Add this to src/components/DebugInfo.tsx
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../utils/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
 const DebugInfo: React.FC = () => {
-  const { user, profile, loading, refreshProfile } = useAuth();
+  const { user, profile, loading, refreshProfile, hasRLSIssue } = useAuth();
   const [debugData, setDebugData] = useState<any>({});
   const [isVisible, setIsVisible] = useState(false);
   const [testResults, setTestResults] = useState<any>({});
@@ -19,7 +18,7 @@ const DebugInfo: React.FC = () => {
     if (showDebug) {
       collectDebugInfo();
     }
-  }, [user, profile, loading]);
+  }, [user, profile, loading, hasRLSIssue]);
 
   const collectDebugInfo = async () => {
     const info: any = {
@@ -42,6 +41,7 @@ const DebugInfo: React.FC = () => {
         profileRole: profile?.role,
         profileEmail: profile?.email,
         profileFullName: profile?.full_name,
+        hasRLSIssue,
         sessionExists: !!(await supabase.auth.getSession()).data.session
       },
       supabase: {
@@ -63,12 +63,14 @@ const DebugInfo: React.FC = () => {
       results.supabaseConnection = {
         success: !error,
         error: error?.message,
-        hasData: !!data
+        hasData: !!data,
+        isRLSError: error?.code === '42P17' || error?.message?.includes('infinite recursion')
       };
     } catch (err) {
       results.supabaseConnection = {
         success: false,
-        error: err instanceof Error ? err.message : 'Unknown error'
+        error: err instanceof Error ? err.message : 'Unknown error',
+        isRLSError: false
       };
     }
 
@@ -88,7 +90,7 @@ const DebugInfo: React.FC = () => {
       };
     }
 
-    // Test 3: Profile fetch
+    // Test 3: Profile fetch (with RLS error detection)
     if (user) {
       try {
         const { data, error } = await supabase
@@ -100,12 +102,15 @@ const DebugInfo: React.FC = () => {
           success: !error,
           hasProfile: !!data,
           error: error?.message,
-          profileData: data ? `${data.email} (${data.role})` : null
+          profileData: data ? `${data.email} (${data.role})` : null,
+          isRLSError: error?.code === '42P17' || error?.message?.includes('infinite recursion'),
+          errorCode: error?.code
         };
       } catch (err) {
         results.profileFetch = {
           success: false,
-          error: err instanceof Error ? err.message : 'Unknown error'
+          error: err instanceof Error ? err.message : 'Unknown error',
+          isRLSError: false
         };
       }
     }
@@ -121,13 +126,38 @@ const DebugInfo: React.FC = () => {
         hasData: !!data?.length,
         error: error?.message,
         count: data?.length || 0,
-        sample: data?.slice(0, 2).map(c => c.title) || []
+        sample: data?.slice(0, 2).map(c => c.title) || [],
+        isRLSError: error?.code === '42P17' || error?.message?.includes('infinite recursion')
       };
     } catch (err) {
       results.coursesFetch = {
         success: false,
-        error: err instanceof Error ? err.message : 'Unknown error'
+        error: err instanceof Error ? err.message : 'Unknown error',
+        isRLSError: false
       };
+    }
+
+    // Test 5: RLS Policy Test
+    if (user) {
+      try {
+        // Try a simple select without any conditions to test basic RLS
+        const { data, error } = await supabase
+          .from('user_profiles')
+          .select('id')
+          .limit(1);
+        results.rlsPolicyTest = {
+          success: !error,
+          error: error?.message,
+          isRLSError: error?.code === '42P17' || error?.message?.includes('infinite recursion'),
+          errorCode: error?.code
+        };
+      } catch (err) {
+        results.rlsPolicyTest = {
+          success: false,
+          error: err instanceof Error ? err.message : 'Unknown error',
+          isRLSError: true
+        };
+      }
     }
 
     setTestResults(results);
@@ -149,14 +179,34 @@ const DebugInfo: React.FC = () => {
       window.location.href = '/login';
     } catch (error) {
       console.error('Force sign out failed:', error);
-      // Clear everything manually
       localStorage.clear();
       sessionStorage.clear();
       window.location.href = '/login';
     }
   };
 
+  const handleRLSWorkaround = async () => {
+    if (!user) {
+      alert('No user logged in');
+      return;
+    }
+
+    try {
+      console.log('🛠️ Attempting RLS workaround...');
+      
+      // Try to create a basic profile using service role or admin functions
+      // This would typically require a server-side function
+      alert('RLS Workaround: This would require a server-side function to bypass RLS policies. Contact your database administrator to fix the infinite recursion in user_profiles RLS policies.');
+      
+    } catch (error) {
+      console.error('RLS workaround failed:', error);
+      alert(`RLS workaround failed: ${error}`);
+    }
+  };
+
   if (!isVisible) return null;
+
+  const hasAnyRLSIssues = testResults && Object.values(testResults).some((result: any) => result?.isRLSError);
 
   return (
     <div className="fixed bottom-4 right-4 z-50">
@@ -164,7 +214,10 @@ const DebugInfo: React.FC = () => {
         isMinimized ? 'w-48' : 'w-80 max-w-sm'
       }`}>
         <div className="flex justify-between items-center p-3 border-b border-gray-600">
-          <span className="font-bold">🐛 Debug Info</span>
+          <span className="font-bold flex items-center">
+            🐛 Debug Info
+            {hasRLSIssue && <span className="ml-2 text-red-400 animate-pulse">⚠️</span>}
+          </span>
           <div className="flex space-x-1">
             <button
               onClick={() => setIsMinimized(!isMinimized)}
@@ -184,13 +237,33 @@ const DebugInfo: React.FC = () => {
         
         {!isMinimized && (
           <div className="p-3 space-y-2 max-h-96 overflow-y-auto">
+            {/* RLS Issue Alert */}
+            {(hasRLSIssue || hasAnyRLSIssues) && (
+              <div className="bg-red-900 border border-red-700 rounded p-2 mb-2">
+                <div className="text-red-300 font-bold text-xs mb-1">🚨 RLS POLICY ISSUE DETECTED</div>
+                <div className="text-red-200 text-xs mb-2">
+                  Infinite recursion in user_profiles table policies
+                </div>
+                <button
+                  onClick={handleRLSWorkaround}
+                  className="bg-red-700 hover:bg-red-600 px-2 py-1 rounded text-xs w-full"
+                >
+                  Show RLS Fix Info
+                </button>
+              </div>
+            )}
+
             {/* Quick Status */}
             <div className="space-y-1">
               <div>
                 <strong>Auth:</strong> {loading ? '⏳ Loading' : user ? '✅ Logged in' : '❌ Not logged in'}
               </div>
-              <div>
-                <strong>Profile:</strong> {profile ? `✅ ${profile.role}` : '❌ No profile'}
+              <div className="flex items-center">
+                <strong>Profile:</strong> 
+                {hasRLSIssue && <span className="ml-1 text-red-400">⚠️</span>}
+                <span className={hasRLSIssue ? 'text-red-300 ml-1' : 'ml-1'}>
+                  {profile ? `✅ ${profile.role}` : '❌ No profile'}
+                </span>
               </div>
               <div>
                 <strong>Email:</strong> {user?.email || 'None'}
@@ -261,10 +334,21 @@ const DebugInfo: React.FC = () => {
                 <div className="space-y-1 mt-1">
                   {Object.entries(testResults).map(([key, result]: [string, any]) => (
                     <div key={key} className="text-xs">
-                      <strong>{key}:</strong> {result.success ? '✅' : '❌'}
-                      {result.error && <div className="text-red-400 ml-2 truncate">{result.error}</div>}
+                      <div className="flex items-center">
+                        <strong>{key}:</strong> 
+                        <span className="ml-1">
+                          {result.success ? '✅' : '❌'}
+                          {result.isRLSError && <span className="text-red-400 ml-1">🔄</span>}
+                        </span>
+                      </div>
+                      {result.error && (
+                        <div className={`ml-2 truncate ${result.isRLSError ? 'text-red-400' : 'text-red-300'}`}>
+                          {result.isRLSError && '🚨 RLS: '}{result.error}
+                        </div>
+                      )}
                       {result.profileData && <div className="text-green-400 ml-2">{result.profileData}</div>}
                       {result.count !== undefined && <div className="text-blue-400 ml-2">Count: {result.count}</div>}
+                      {result.errorCode && <div className="text-yellow-400 ml-2">Code: {result.errorCode}</div>}
                     </div>
                   ))}
                 </div>

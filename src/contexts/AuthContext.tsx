@@ -19,6 +19,7 @@ interface AuthContextType {
   loading: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  hasRLSIssue: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -36,29 +37,81 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [hasRLSIssue, setHasRLSIssue] = useState(false);
+
+  const isRLSError = (error: any): boolean => {
+    return error?.code === '42P17' || // Infinite recursion
+           error?.message?.includes('infinite recursion') ||
+           error?.message?.includes('policy') ||
+           (error?.message?.includes('500') && error?.message?.includes('user_profiles'));
+  };
 
   const fetchProfile = async (userId: string, retryCount = 0): Promise<void> => {
     try {
       console.log('🔍 Fetching profile for user:', userId, 'Retry:', retryCount);
       
+      // If we've detected RLS issues, try a different approach
+      if (hasRLSIssue || retryCount > 0) {
+        console.log('⚠️ Using RLS bypass approach for profile fetch');
+        
+        // Try using the auth admin functions or service role if available
+        // For now, create a minimal profile from user metadata
+        const { data: userData } = await supabase.auth.getUser();
+        if (userData.user) {
+          const fallbackProfile: UserProfile = {
+            id: userId,
+            email: userData.user.email || '',
+            first_name: userData.user.user_metadata?.first_name || null,
+            last_initial: userData.user.user_metadata?.last_name?.charAt(0) || null,
+            full_name: userData.user.user_metadata?.full_name || userData.user.email || 'User',
+            role: 'student', // Default role when we can't fetch from DB
+            organization_id: null
+          };
+          
+          console.log('🛡️ Using fallback profile due to RLS issues:', fallbackProfile);
+          setProfile(fallbackProfile);
+          return;
+        }
+      }
+
+      // Try normal profile fetch with RLS error handling
       const { data, error } = await supabase
         .from('user_profiles')
         .select('*')
         .eq('id', userId)
-        .maybeSingle(); // Use maybeSingle instead of single to avoid errors
+        .maybeSingle();
 
       if (error) {
         console.error('❌ Error fetching profile:', error);
         
-        // If profile doesn't exist and this is first attempt, try to create it
-        if (error.code === 'PGRST116' && retryCount === 0) {
-          console.log('📝 Profile not found, attempting to create...');
-          await createDefaultProfile(userId);
-          // Retry once after creation
+        // Check if it's an RLS infinite recursion error
+        if (isRLSError(error)) {
+          console.error('🚨 RLS infinite recursion detected!');
+          setHasRLSIssue(true);
+          
+          // Show user-friendly message about database issues
+          if (process.env.NODE_ENV === 'development') {
+            console.error('🔧 DATABASE ISSUE DETECTED:');
+            console.error('   The user_profiles table has a Row Level Security policy');
+            console.error('   that creates infinite recursion. This needs to be fixed in Supabase.');
+            console.error('   Common causes:');
+            console.error('   - Policy references auth.uid() and queries user_profiles');
+            console.error('   - Policy has circular dependencies');
+            console.error('   - Policy uses functions that query the same table');
+          }
+          
+          // Use fallback profile creation
           return fetchProfile(userId, 1);
         }
         
-        console.warn('⚠️ Could not fetch/create profile, proceeding without profile');
+        // Handle other errors (like missing profile)
+        if (error.code === 'PGRST116' && retryCount === 0) {
+          console.log('📝 Profile not found, user will need admin help or policy fix');
+          setProfile(null);
+          return;
+        }
+        
+        console.warn('⚠️ Could not fetch profile:', error.message);
         setProfile(null);
         return;
       }
@@ -66,59 +119,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (data) {
         console.log('✅ Profile fetched successfully:', data.email, data.role);
         setProfile(data);
+        setHasRLSIssue(false); // Reset RLS issue flag on success
       } else {
-        // No profile found, try to create one (first attempt only)
-        if (retryCount === 0) {
-          console.log('📝 No profile data, attempting to create...');
-          await createDefaultProfile(userId);
-          return fetchProfile(userId, 1);
-        } else {
-          console.warn('⚠️ No profile found after creation attempt');
-          setProfile(null);
-        }
+        console.log('📝 No profile found for user');
+        setProfile(null);
       }
+      
     } catch (error) {
       console.error('❌ Exception in fetchProfile:', error);
-      setProfile(null);
-    }
-  };
-
-  const createDefaultProfile = async (userId: string): Promise<void> => {
-    try {
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData.user) {
-        console.error('❌ No user data available for profile creation');
-        return;
-      }
-
-      const profileData = {
-        id: userId,
-        email: userData.user.email || '',
-        first_name: userData.user.user_metadata?.first_name || null,
-        last_initial: userData.user.user_metadata?.last_name?.charAt(0) || null,
-        full_name: userData.user.user_metadata?.full_name || userData.user.email || '',
-        role: 'student' as const
-      };
-
-      console.log('📝 Creating profile with data:', profileData);
-
-      const { data: newProfile, error: createError } = await supabase
-        .from('user_profiles')
-        .insert(profileData)
-        .select()
-        .single();
       
-      if (createError) {
-        console.error('❌ Error creating profile:', createError);
-        // If it's a permissions error, log it but don't throw
-        if (createError.code === '42501' || createError.code === 'PGRST301') {
-          console.warn('⚠️ Insufficient permissions to create profile. Admin intervention required.');
+      if (isRLSError(error)) {
+        setHasRLSIssue(true);
+        if (retryCount === 0) {
+          return fetchProfile(userId, 1); // Retry with fallback
         }
-      } else {
-        console.log('✅ Profile created successfully:', newProfile);
       }
-    } catch (error) {
-      console.error('❌ Exception in createDefaultProfile:', error);
+      
+      setProfile(null);
     }
   };
 
@@ -147,7 +164,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               setLoading(false);
             }
           }
-        }, 10000); // 10 second timeout
+        }, 15000); // 15 second timeout
         
         // Get initial session
         const { data: { session }, error } = await supabase.auth.getSession();
@@ -165,7 +182,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             console.log('✅ AuthContext: Session found for:', session.user.email);
             setSession(session);
             setUser(session.user);
-            // Fetch profile with error handling
+            
+            // Fetch profile with RLS error handling
             try {
               await fetchProfile(session.user.id);
             } catch (profileError) {
@@ -206,7 +224,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             console.log('✅ User signed in:', session.user.email);
             setSession(session);
             setUser(session.user);
-            setLoading(true); // Set loading while fetching profile
+            setLoading(true);
             try {
               await fetchProfile(session.user.id);
             } catch (profileError) {
@@ -218,6 +236,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           
         case 'SIGNED_OUT':
           console.log('👋 User signed out');
+          setHasRLSIssue(false); // Reset RLS flag
           clearAuthState();
           break;
           
@@ -227,7 +246,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setSession(session);
             setUser(session.user);
             // Don't re-fetch profile on token refresh if we already have it
-            if (!profile) {
+            if (!profile && !hasRLSIssue) {
               try {
                 await fetchProfile(session.user.id);
               } catch (profileError) {
@@ -237,13 +256,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
           break;
           
-        case 'PASSWORD_RECOVERY':
-        case 'USER_UPDATED':
-          // Handle these events if needed
-          break;
-          
         default:
-          // For any other events, ensure loading is false
           setLoading(false);
       }
     });
@@ -253,29 +266,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       clearTimeout(initTimeout);
       subscription.unsubscribe();
     };
-  }, []); // Empty dependency array - only run once
+  }, []);
 
   const signOut = async () => {
     try {
       console.log('👋 Initiating sign out...');
       setLoading(true);
       
-      // Clear state immediately for better UX
+      // Clear state immediately
       clearAuthState();
+      setHasRLSIssue(false);
       
       // Sign out from Supabase
       const { error } = await supabase.auth.signOut();
       
       if (error) {
         console.error('❌ Error signing out:', error);
-        // Even if there's an error, we've cleared local state
       } else {
         console.log('✅ Successfully signed out');
       }
       
-      // Clear any cached data
+      // Clear storage
       if (typeof window !== 'undefined') {
-        // Clear any localStorage items if you're using them
         localStorage.removeItem('supabase.auth.token');
         sessionStorage.clear();
       }
@@ -283,7 +295,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error) {
       console.error('❌ Exception during sign out:', error);
     } finally {
-      // Ensure loading is false and state is clear
       clearAuthState();
     }
   };
@@ -291,6 +302,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const refreshProfile = async () => {
     if (user) {
       console.log('🔄 Refreshing profile for:', user.email);
+      setHasRLSIssue(false); // Reset RLS flag before retry
       await fetchProfile(user.id);
     }
   };
@@ -302,6 +314,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loading,
     signOut,
     refreshProfile,
+    hasRLSIssue
   };
 
   // Debug logging (only in development)
@@ -312,7 +325,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       hasProfile: !!profile,
       profileRole: profile?.role,
       loading,
-      sessionValid: !!session
+      sessionValid: !!session,
+      hasRLSIssue
     });
   }
 
