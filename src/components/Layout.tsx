@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import RLSErrorBanner from './RLSErrorBanner';
@@ -12,6 +12,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [isSigningOut, setIsSigningOut] = useState(false);
+
+  // ADDED: Clear any persistent error states when navigating
+  useEffect(() => {
+    // Clear any cached requests when navigating to prevent error persistence
+    if ((window as any).courseService?.clearCache) {
+      (window as any).courseService.clearCache();
+    }
+  }, [location.pathname]);
 
   const handleSignOut = async () => {
     if (isSigningOut) return; // Prevent double-click

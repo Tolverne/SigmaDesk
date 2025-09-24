@@ -139,12 +139,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Clear all auth state
+  // Clear all auth state - FIXED: Also reset error flags
   const clearAuthState = () => {
     console.log('🧹 Clearing auth state...');
     setUser(null);
     setProfile(null);
     setSession(null);
+    setHasRLSIssue(false); // IMPORTANT: Reset error flags
     setLoading(false);
   };
 
@@ -225,6 +226,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setSession(session);
             setUser(session.user);
             setLoading(true);
+            // Reset error states on sign in
+            setHasRLSIssue(false);
             try {
               await fetchProfile(session.user.id);
             } catch (profileError) {
@@ -236,8 +239,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           
         case 'SIGNED_OUT':
           console.log('👋 User signed out');
-          setHasRLSIssue(false); // Reset RLS flag
-          clearAuthState();
+          clearAuthState(); // This now clears error flags too
           break;
           
         case 'TOKEN_REFRESHED':
@@ -273,9 +275,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('👋 Initiating sign out...');
       setLoading(true);
       
-      // Clear state immediately
+      // Clear state immediately (including error flags)
       clearAuthState();
-      setHasRLSIssue(false);
       
       // Sign out from Supabase
       const { error } = await supabase.auth.signOut();

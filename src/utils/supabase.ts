@@ -186,5 +186,47 @@ if (process.env.NODE_ENV === 'development') {
     checkSupabaseHealth();
   }, 60000); // Check every minute in development
 }
+// Add this to the end of your existing supabase.ts file, 
+// after the existing window debugging functions
 
-console.log('✅ Supabase client created with enhanced configuration');
+// Simple debug functions without dynamic imports
+if (typeof window !== 'undefined') {
+    // Add cache clearing function that works with any courseService
+    (window as any).clearAllCaches = () => {
+      console.log('🧹 Clearing all caches...');
+      
+      // Try to clear courseService cache if it exists
+      if ((window as any).courseService?.clearCache) {
+        (window as any).courseService.clearCache();
+        console.log('✅ CourseService cache cleared');
+      }
+      
+      // Clear any other browser caches
+      if ('caches' in window) {
+        caches.keys().then(names => {
+          names.forEach(name => caches.delete(name));
+        });
+      }
+      
+      console.log('✅ All caches cleared');
+    };
+    
+    // Add basic connection test
+    (window as any).testConnection = async () => {
+      console.log('🧪 Testing basic Supabase connection...');
+      try {
+        const { data, error } = await supabase.from('organizations').select('count').limit(1);
+        if (error) {
+          console.error('❌ Connection test failed:', error.message);
+          return false;
+        }
+        console.log('✅ Connection test passed');
+        return true;
+      } catch (error) {
+        console.error('❌ Connection test failed:', error);
+        return false;
+      }
+    };
+    
+    console.log('🔧 Debug functions available: window.clearAllCaches(), window.testConnection()');
+  }

@@ -4,17 +4,25 @@ import { Course, Topic, Lesson, Enrollment, UserProgress } from '../types/course
 // Request cache to prevent duplicate requests
 const requestCache = new Map<string, Promise<any>>();
 
-// Request deduplication helper
+// Request deduplication helper - FIXED to not cache failed requests
 const dedupedRequest = <T>(key: string, requestFn: () => Promise<T>): Promise<T> => {
   if (requestCache.has(key)) {
     console.log('🔄 Using cached request for:', key);
-    return requestCache.get(key)!; // Non-null assertion since we checked has(key)
+    return requestCache.get(key)!;
   }
 
   const promise = requestFn()
+    .catch((error) => {
+      // IMPORTANT FIX: Remove failed requests from cache immediately
+      console.log('❌ Request failed, removing from cache:', key);
+      requestCache.delete(key);
+      throw error; // Re-throw the error
+    })
     .finally(() => {
-      // Clean up cache after request completes
-      setTimeout(() => requestCache.delete(key), 5000);
+      // Clean up successful requests after delay
+      setTimeout(() => {
+        requestCache.delete(key);
+      }, 5000);
     });
 
   requestCache.set(key, promise);
@@ -71,7 +79,7 @@ const withRetry = async <T>(
 };
 
 export const courseService = {
-  // Fetch all published courses with improved connection management
+  // Fetch all published courses
   async getCourses(): Promise<Course[]> {
     const cacheKey = 'get-courses';
     
@@ -80,7 +88,6 @@ export const courseService = {
       
       return withRetry(async () => {
         try {
-          // Simple, reliable query without complex timeout logic
           const { data, error } = await supabase
             .from('courses')
             .select(`
@@ -121,7 +128,7 @@ export const courseService = {
           console.error('🔍 courseService: Exception in getCourses:', error);
           throw error;
         }
-      }, 2, 2000); // 2 retries with 2 second base delay
+      }, 2, 2000);
     });
   },
 
@@ -183,7 +190,7 @@ export const courseService = {
     });
   },
 
-  // Get user's enrolled courses with deduplication
+  // Get user's enrolled courses
   async getEnrolledCourses(userId: string): Promise<Course[]> {
     const cacheKey = `enrolled-courses-${userId}`;
     
@@ -222,7 +229,7 @@ export const courseService = {
           console.error('❌ Exception in getEnrolledCourses:', error);
           return []; // Return empty array instead of throwing
         }
-      }, 1, 1000); // Single retry for enrollment check
+      }, 1, 1000);
     });
   },
 
@@ -238,7 +245,7 @@ export const courseService = {
           .select('id')
           .eq('course_id', courseId)
           .eq('user_id', userId)
-          .maybeSingle(); // Use maybeSingle to avoid errors
+          .maybeSingle();
 
         if (existing) {
           throw new Error('Already enrolled in this course');
@@ -267,7 +274,7 @@ export const courseService = {
           throw new Error(`Enrollment failed: ${error.message}`);
         }
         
-        // Clear relevant caches
+        // Clear relevant caches after successful enrollment
         requestCache.delete(`enrolled-courses-${userId}`);
         
         console.log('✅ Successfully enrolled in course');
@@ -491,3 +498,8 @@ export const courseService = {
     requestCache.clear();
   }
 };
+
+// Make courseService available globally for debugging
+if (typeof window !== 'undefined') {
+  (window as any).courseService = courseService;
+}
