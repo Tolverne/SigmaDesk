@@ -7,6 +7,8 @@ import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import UnauthorizedPage from './pages/UnauthorizedPage';
+import DebugPage from './pages/DebugPage';
+
 
 function App() {
   return (
@@ -19,7 +21,8 @@ function App() {
           {/* Routes with layout */}
           <Route path="/" element={<Layout><HomePage /></Layout>} />
           <Route path="/unauthorized" element={<Layout><UnauthorizedPage /></Layout>} />
-          
+          <Route path="/debug" element={<Layout><DebugPage /></Layout>} />
+
           {/* Protected routes */}
           <Route
             path="/dashboard"
