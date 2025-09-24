@@ -1,10 +1,35 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { courseService } from '../services/courseService';
+import { Course } from '../types/course.types';
+import CourseCard from '../components/CourseCard';
 
 const DashboardPage: React.FC = () => {
   const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
+  const [enrolledCourses, setEnrolledCourses] = useState<Course[]>([]);
+  const [loadingCourses, setLoadingCourses] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      loadEnrolledCourses();
+    }
+  }, [user]);
+
+  const loadEnrolledCourses = async () => {
+    if (!user) return;
+    
+    try {
+      setLoadingCourses(true);
+      const courses = await courseService.getEnrolledCourses(user.id);
+      setEnrolledCourses(courses);
+    } catch (error) {
+      console.error('Error loading enrolled courses:', error);
+    } finally {
+      setLoadingCourses(false);
+    }
+  };
 
   const handleSignOut = async () => {
     await signOut();
@@ -138,6 +163,74 @@ const DashboardPage: React.FC = () => {
               </button>
             </div>
           </div>
+
+          {/* My Courses Section - New Addition */}
+          {profile?.role === 'student' && (
+            <div className="mt-8">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-lg font-semibold text-gray-700">My Courses</h3>
+                {enrolledCourses.length > 2 && (
+                  <button 
+                    onClick={() => navigate('/courses')}
+                    className="text-sigma-blue hover:underline text-sm"
+                  >
+                    View all courses →
+                  </button>
+                )}
+              </div>
+              
+              {loadingCourses ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sigma-blue mx-auto"></div>
+                  <p className="mt-2 text-sm text-gray-600">Loading courses...</p>
+                </div>
+              ) : enrolledCourses.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {enrolledCourses.slice(0, 2).map(course => (
+                    <CourseCard key={course.id} course={course} isEnrolled={true} />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 bg-gray-50 rounded-lg">
+                  <p className="text-gray-600 mb-3">You haven't enrolled in any courses yet.</p>
+                  <button 
+                    onClick={() => navigate('/courses')}
+                    className="px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+                  >
+                    Browse Available Courses
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* For teachers and admins, show a different courses section */}
+          {(profile?.role === 'teacher' || profile?.role === 'admin' || profile?.role === 'super_admin') && (
+            <div className="mt-8">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-lg font-semibold text-gray-700">Course Management</h3>
+                <button 
+                  onClick={() => navigate('/courses')}
+                  className="text-sigma-blue hover:underline text-sm"
+                >
+                  Manage courses →
+                </button>
+              </div>
+              <div className="text-center py-8 bg-gray-50 rounded-lg">
+                <p className="text-gray-600">
+                  {profile?.role === 'teacher' 
+                    ? 'View and manage courses you teach'
+                    : 'Create and manage all courses in the system'}
+                </p>
+                <button 
+                  onClick={() => navigate('/courses')}
+                  className="mt-3 px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+                >
+                  Go to Courses
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

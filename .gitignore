@@ -26,4 +26,6 @@ yarn-error.log*
 .idea/
 .vscode/
 *.swp
-*.swo
+*.swo.env.local
+.env
+.env.production

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -12,8 +12,21 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   allowedRoles 
 }) => {
   const { user, profile, loading } = useAuth();
+  const [timedOut, setTimedOut] = useState(false);
 
-  if (loading) {
+  useEffect(() => {
+    // Add a timeout to prevent infinite loading
+    const timeout = setTimeout(() => {
+      if (loading) {
+        console.error('Auth loading timed out');
+        setTimedOut(true);
+      }
+    }, 5000); // 5 seconds timeout
+
+    return () => clearTimeout(timeout);
+  }, [loading]);
+
+  if (loading && !timedOut) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -24,7 +37,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     );
   }
 
-  if (!user) {
+  if (timedOut || !user) {
     return <Navigate to="/login" replace />;
   }
 

@@ -63,39 +63,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let mounted = true;
 
     const initializeAuth = async () => {
-      try {
-        console.log('Initializing auth...');
-        
-        // Get initial session
-        const { data: { session }, error } = await supabase.auth.getSession();
-        
-        if (error) {
-          console.error('Error getting session:', error);
-        }
-        
-        if (mounted) {
-          if (session) {
-            console.log('Session found:', session.user.email);
-            setSession(session);
-            setUser(session.user);
-            await fetchProfile(session.user.id);
-          } else {
-            console.log('No session found');
-            setSession(null);
-            setUser(null);
-            setProfile(null);
+        try {
+          console.log('🔵 AuthContext: Starting initialization...');
+          
+          // Get initial session
+          const { data: { session }, error } = await supabase.auth.getSession();
+          
+          if (error) {
+            console.error('🔴 AuthContext: Error getting session:', error);
           }
-          setLoading(false);
+          
+          if (mounted) {
+            if (session) {
+              console.log('✅ AuthContext: Session found:', session.user.email);
+              setSession(session);
+              setUser(session.user);
+              await fetchProfile(session.user.id);
+            } else {
+              console.log('⚪ AuthContext: No session found');
+              setSession(null);
+              setUser(null);
+              setProfile(null);
+            }
+            console.log('🟢 AuthContext: Setting loading to false');
+            setLoading(false);
+          }
+        } catch (error) {
+          console.error('🔴 AuthContext: Error in initializeAuth:', error);
+          if (mounted) {
+            setLoading(false);
+          }
         }
-      } catch (error) {
-        console.error('Error in initializeAuth:', error);
-        if (mounted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    initializeAuth();
+      };
+    
+      initializeAuth();
 
     // Listen for auth changes
     const {
