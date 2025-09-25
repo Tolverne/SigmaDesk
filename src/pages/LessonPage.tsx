@@ -5,7 +5,41 @@ import { courseService } from '../services/courseService';
 import { supabase } from '../utils/supabase';
 import { Lesson } from '../types/course.types';
 import Breadcrumb from '../components/Breadcrumb';
+import CanvasWorkspace from '../components/canvas/CanvasWorkspace';
 import { ChevronLeft, ChevronRight, CheckCircle } from 'lucide-react';
+
+const WORKSKIP_REGEX = /\\workskip\b/g; // matches \workskip markers in LaTeX
+
+function escapeHtml(s: string) {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function splitByWorkskip(latex: string): Array<{ type: 'text' | 'canvas'; content?: string; index?: number }> {
+  const parts: Array<{ type: 'text' | 'canvas'; content?: string; index?: number }> = [];
+  if (!latex || !latex.length) return [{ type: 'text', content: '' }];
+
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let slot = 0;
+
+  while ((match = WORKSKIP_REGEX.exec(latex)) !== null) {
+    const textChunk = latex.slice(lastIndex, match.index);
+    if (textChunk) parts.push({ type: 'text', content: textChunk });
+    parts.push({ type: 'canvas', index: slot });
+    slot += 1;
+    lastIndex = match.index + match[0].length;
+  }
+
+  const tail = latex.slice(lastIndex);
+  if (tail) parts.push({ type: 'text', content: tail });
+
+  if (parts.length === 0) return [{ type: 'text', content: latex }];
+
+  return parts;
+}
 
 const LessonPage: React.FC = () => {
   const { courseId, lessonId } = useParams<{ courseId: string; lessonId: string }>();
@@ -29,12 +63,10 @@ const LessonPage: React.FC = () => {
       setError(null);
 
       try {
-        // Fetch lesson
-        const data = await courseService.getLesson(lessonId, { signal });
+        const data = await courseService.getLesson(lessonId);
         if (signal.aborted) return;
         setLesson(data);
 
-        // Fetch user progress (separate, lightweight)
         if (user?.id) {
           try {
             const { data: prog } = await supabase
@@ -45,8 +77,7 @@ const LessonPage: React.FC = () => {
               .maybeSingle();
 
             if (!signal.aborted) setIsCompleted(!!prog?.is_completed);
-          } catch (e) {
-            // non-fatal
+          } catch {
             if (!signal.aborted) setIsCompleted(false);
           }
         } else {
@@ -57,13 +88,9 @@ const LessonPage: React.FC = () => {
         console.error('Error loading lesson:', err);
         if (!signal.aborted) {
           const msg = String(err?.message || '').toLowerCase();
-          if (msg.includes('not found')) {
-            setError('Lesson not found');
-          } else if (msg.includes('jwt') || msg.includes('session')) {
-            setError('Your session has expired. Please sign in again.');
-          } else {
-            setError('Failed to load lesson. Please try again.');
-          }
+          if (msg.includes('not found')) setError('Lesson not found');
+          else if (msg.includes('jwt') || msg.includes('session')) setError('Your session has expired. Please sign in again.');
+          else setError('Failed to load lesson. Please try again.');
         }
       } finally {
         if (!signal.aborted) setLoading(false);
@@ -88,7 +115,6 @@ const LessonPage: React.FC = () => {
     }
   };
 
-  // Loading state
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
@@ -97,7 +123,6 @@ const LessonPage: React.FC = () => {
     );
   }
 
-  // Error / Not found state
   if (error && !lesson) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-8">
@@ -110,9 +135,7 @@ const LessonPage: React.FC = () => {
           <h2 className="text-xl font-semibold text-red-800 mb-2">
             {error === 'Lesson not found' ? 'Lesson Not Found' : 'Failed to Load Lesson'}
           </h2>
-          <p className="text-red-600 mb-6">
-            {error}
-          </p>
+          <p className="text-red-600 mb-6">{error}</p>
           <div className="space-x-4">
             <button
               onClick={() => navigate(`/courses/${courseId}`)}
@@ -136,6 +159,9 @@ const LessonPage: React.FC = () => {
     return <div className="max-w-4xl mx-auto px-4 py-8">Lesson not found</div>;
   }
 
+  // Split LaTeX on \workskip markers
+  const segments = splitByWorkskip(String((lesson as any).content_latex || ''));
+
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       <Breadcrumb items={[
@@ -145,16 +171,14 @@ const LessonPage: React.FC = () => {
       ]} />
 
       <div className="bg-white rounded-lg shadow">
-        {/* Lesson Header */}
+        {/* Header */}
         <div className="p-6 border-b">
           <div className="flex justify-between items-start">
             <div>
               <h1 className="text-2xl font-bold text-gray-800 mb-2">
                 {lesson.title}
               </h1>
-              <p className="text-gray-600">
-                {lesson.description}
-              </p>
+              <p className="text-gray-600">{lesson.description}</p>
               <p className="text-sm text-gray-500 mt-2">
                 Estimated time: {lesson.estimated_minutes} minutes
               </p>
@@ -174,42 +198,39 @@ const LessonPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Lesson Content */}
-        <div className="p-6">
-          {lesson.video_url && (
-            <div className="mb-6">
-              <h2 className="text-lg font-semibold mb-3">Video</h2>
-              <div className="bg-gray-100 rounded-lg p-4 text-center">
-                <p className="text-gray-600">
-                  Video player will be implemented in Phase 4
-                </p>
-                <p className="text-sm text-gray-500 mt-2">
-                  URL: {lesson.video_url}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {lesson.content_latex && (
-            <div className="prose max-w-none">
-              <h2 className="text-lg font-semibold mb-3">Content</h2>
-              <div className="bg-gray-50 rounded-lg p-6">
-                {/* Basic rendering - will be enhanced with LaTeX support */}
+        {/* Content + canvases */}
+        <div className="p-6 space-y-6">
+          {segments.map((seg, i) =>
+            seg.type === 'text' ? (
+              <div key={`t-${i}`} className="bg-gray-50 rounded-lg p-4">
                 <div
+                  className="prose max-w-none"
                   dangerouslySetInnerHTML={{
-                    __html: lesson.content_latex.replace(/\n/g, '<br/>'),
+                    __html: escapeHtml(seg.content || '').replace(/\n/g, '<br/>'),
                   }}
                 />
               </div>
-            </div>
+            ) : (
+              <div key={`c-${seg.index}`} className="bg-white rounded-lg">
+                <h3 className="text-md font-semibold text-gray-700 mb-2">
+                  Working Area {Number(seg.index) + 1}
+                </h3>
+                <CanvasWorkspace
+                  lessonId={lesson.id}
+                  slotIndex={Number(seg.index)}
+                  className="mb-2"
+                />
+              </div>
+            )
           )}
 
-          {!lesson.content_latex && !lesson.video_url && (
-            <div className="text-center py-12 text-gray-500">
-              <p>This lesson will have interactive canvas content.</p>
-              <p className="text-sm mt-2">Canvas implementation coming in Phase 3!</p>
+          {/* If no \workskip appeared and you still want a single default canvas, uncomment below:
+          {segments.every(s => s.type === 'text') && (
+            <div className="bg-white rounded-lg">
+              <h3 className="text-md font-semibold text-gray-700 mb-2">Working Area</h3>
+              <CanvasWorkspace lessonId={lesson.id} slotIndex={0} className="mb-2" />
             </div>
-          )}
+          )} */}
         </div>
 
         {/* Navigation */}
