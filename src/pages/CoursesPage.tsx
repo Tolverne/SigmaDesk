@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { courseService } from '../services/courseService';
 import { checkSupabaseHealth, resetSupabaseConnection } from '../utils/supabase';
@@ -8,6 +9,8 @@ import Breadcrumb from '../components/Breadcrumb';
 
 const CoursesPage: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
+
   const [courses, setCourses] = useState<Course[]>([]);
   const [enrolledCourseIds, setEnrolledCourseIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -15,127 +18,115 @@ const CoursesPage: React.FC = () => {
   const [enrolling, setEnrolling] = useState<string | null>(null);
   const [connectionIssue, setConnectionIssue] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
-  
-  // Use refs to prevent multiple simultaneous requests
-  const loadingCourses = useRef(false);
-  const loadingEnrollments = useRef(false);
-  
+
+  // A nonce to trigger refetches (used by Retry/Reset actions)
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  // Track timeouts so we can clear them on unmount
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const maxRetries = 3;
 
   useEffect(() => {
-    console.log('📚 CoursesPage: Mounting, user:', user?.email);
-    loadData();
-    
-    // Cleanup function
-    return () => {
-      loadingCourses.current = false;
-      loadingEnrollments.current = false;
-    };
-  }, [user]); // Only depend on user
+    console.log('📚 CoursesPage: Mount or deps changed — user:', user?.email, 'nonce:', reloadNonce);
 
-  const loadData = useCallback(async () => {
-    if (loadingCourses.current) {
-      console.log('📚 CoursesPage: Already loading courses, skipping...');
-      return;
-    }
-    
-    console.log('📚 CoursesPage: Starting data load...');
-    setLoading(true);
-    setError(null);
-    setConnectionIssue(false);
-    
-    try {
-      // Load courses and enrollments in parallel
-      await Promise.all([
-        loadCourses(),
-        user ? loadEnrolledCourses() : Promise.resolve()
-      ]);
-      
-      setRetryCount(0); // Reset retry count on success
-      
-    } catch (error) {
-      console.error('📚 CoursesPage: Data load failed:', error);
-      handleLoadError(error);
-    } finally {
-      setLoading(false);
-    }
-  }, [user]);
+    const controller = new AbortController();
+    const { signal } = controller;
 
-  const loadCourses = async () => {
-    if (loadingCourses.current) return;
-    
-    loadingCourses.current = true;
-    try {
-      console.log('📚 CoursesPage: Loading courses...');
-      const data = await courseService.getCourses();
-      console.log('📚 CoursesPage: Loaded courses:', data.length);
-      setCourses(data);
+    const load = async () => {
+      // Guard: if already aborted, do nothing
+      if (signal.aborted) return;
+
+      console.log('📚 CoursesPage: Starting data load...');
+      setLoading(true);
       setError(null);
-    } catch (error) {
-      console.error('📚 CoursesPage: Error loading courses:', error);
-      throw error; // Re-throw to handle in loadData
-    } finally {
-      loadingCourses.current = false;
-    }
-  };
+      setConnectionIssue(false);
 
-  const loadEnrolledCourses = async () => {
-    if (!user || loadingEnrollments.current) return;
-    
-    loadingEnrollments.current = true;
-    try {
-      console.log('📚 CoursesPage: Loading enrolled courses...');
-      const enrolled = await courseService.getEnrolledCourses(user.id);
-      console.log('📚 CoursesPage: Enrolled courses:', enrolled.length);
-      setEnrolledCourseIds(new Set(enrolled.map(c => c.id)));
-    } catch (error) {
-      console.error('📚 CoursesPage: Error loading enrolled courses:', error);
-      // Don't throw - enrollment loading is not critical
-    } finally {
-      loadingEnrollments.current = false;
-    }
-  };
+      try {
+        // Load courses and (if signed in) enrollments in parallel
+        const [courseList, enrolledList] = await Promise.all([
+          courseService.getCourses({ signal }),
+          user ? courseService.getEnrolledCourses(user.id, { signal }) : Promise.resolve([]),
+        ]);
 
-  const handleLoadError = async (error: any) => {
-    const isConnectionError = 
-      error?.message?.includes('timeout') ||
-      error?.message?.includes('network') ||
-      error?.message?.includes('connection') ||
-      error?.message?.includes('fetch');
-    
+        if (signal.aborted) return; // do not set state after abort
+
+        setCourses(courseList || []);
+        setEnrolledCourseIds(new Set((enrolledList || []).map((c: Course) => c.id)));
+        setRetryCount(0); // success → reset retry
+
+        console.log('📚 CoursesPage: Loaded courses:', courseList?.length ?? 0);
+        if (user) console.log('📚 CoursesPage: Enrolled courses:', enrolledList?.length ?? 0);
+      } catch (err: any) {
+        if (err?.name === 'AbortError') {
+          console.log('⏹️ CoursesPage load aborted');
+          return; // ignore aborts
+        }
+        console.error('📚 CoursesPage: Data load failed:', err);
+        await handleLoadError(err, signal);
+      } finally {
+        if (!signal.aborted) setLoading(false);
+      }
+    };
+
+    load();
+
+    return () => {
+      controller.abort();
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
+    // Re-run when user changes or when we explicitly request reload
+  }, [user?.id, reloadNonce]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleLoadError = async (error: any, signal?: AbortSignal) => {
+    const msg = String(error?.message || '').toLowerCase();
+    const isConnectionError =
+      msg.includes('timeout') ||
+      msg.includes('network') ||
+      msg.includes('connection') ||
+      msg.includes('fetch');
+
     if (isConnectionError) {
       console.log('🔌 Detected connection issue');
-      setConnectionIssue(true);
-      
+      if (!signal?.aborted) setConnectionIssue(true);
+
       // Check Supabase health
-      const isHealthy = await checkSupabaseHealth();
+      const isHealthy = await checkSupabaseHealth().catch(() => false);
+
       if (!isHealthy && retryCount < maxRetries) {
         console.log(`🔄 Connection unhealthy, attempting recovery (${retryCount + 1}/${maxRetries})`);
-        setRetryCount(prev => prev + 1);
-        
-        // Try to reset connection
+        if (!signal?.aborted) setRetryCount((prev) => prev + 1);
+
         try {
           await resetSupabaseConnection();
-          setTimeout(() => loadData(), 2000); // Retry after 2 seconds
+          // Retry after a short delay; use nonce to trigger effect
+          retryTimerRef.current = setTimeout(() => {
+            if (!signal?.aborted) {
+              courseService.clearCache();
+              setReloadNonce((n) => n + 1);
+            }
+          }, 2000);
           return;
         } catch (resetError) {
           console.error('❌ Failed to reset connection:', resetError);
         }
       }
     }
-    
+
     // Set appropriate error message
     let errorMessage = 'Failed to load courses. Please try again.';
-    
     if (isConnectionError) {
       errorMessage = 'Connection issue detected. Please check your internet connection and try again.';
-    } else if (error?.message?.includes('JWT') || error?.message?.includes('Session')) {
+    } else if (msg.includes('jwt') || msg.includes('session')) {
       errorMessage = 'Your session has expired. Please sign in again.';
-    } else if (error?.message?.includes('Unauthorized')) {
+    } else if (msg.includes('unauthorized')) {
       errorMessage = 'Access denied. Please sign in and try again.';
     }
-    
-    setError(errorMessage);
+
+    if (!signal?.aborted) setError(errorMessage);
   };
 
   const handleEnroll = async (courseId: string) => {
@@ -143,7 +134,6 @@ const CoursesPage: React.FC = () => {
       alert('Please sign in to enroll in courses');
       return;
     }
-
     if (enrolling) {
       console.log('⚠️ Already enrolling, preventing duplicate request');
       return;
@@ -152,20 +142,17 @@ const CoursesPage: React.FC = () => {
     setEnrolling(courseId);
     try {
       await courseService.enrollInCourse(courseId, user.id);
-      setEnrolledCourseIds(new Set(Array.from(enrolledCourseIds).concat(courseId)));
-      
+      setEnrolledCourseIds((prev) => new Set(Array.from(prev).concat(courseId)));
+
       // Show success message
-      const courseTitle = courses.find(c => c.id === courseId)?.title || 'course';
+      const courseTitle = courses.find((c) => c.id === courseId)?.title || 'course';
       alert(`Successfully enrolled in ${courseTitle}!`);
-      
-    } catch (error: any) {
-      console.error('❌ Enrollment failed:', error);
-      
-      let errorMessage = error.message || 'Failed to enroll in course';
-      if (error.message?.includes('JWT') || error.message?.includes('Session')) {
+    } catch (err: any) {
+      console.error('❌ Enrollment failed:', err);
+      let errorMessage = err?.message || 'Failed to enroll in course';
+      if (String(err?.message || '').toLowerCase().includes('jwt') || String(err?.message || '').toLowerCase().includes('session')) {
         errorMessage = 'Your session has expired. Please sign in again.';
       }
-      
       alert(errorMessage);
     } finally {
       setEnrolling(null);
@@ -174,22 +161,24 @@ const CoursesPage: React.FC = () => {
 
   const handleRetry = async () => {
     console.log('🔄 User requested retry');
-    setRetryCount(0); // Reset retry count
-    courseService.clearCache(); // Clear any cached requests
-    await loadData();
+    setRetryCount(0);
+    courseService.clearCache();
+    setReloadNonce((n) => n + 1);
   };
 
   const handleConnectionReset = async () => {
     console.log('🔧 User requested connection reset');
     setLoading(true);
     setError(null);
-    
+
     try {
       await resetSupabaseConnection();
       courseService.clearCache();
-      setTimeout(() => loadData(), 1000);
-    } catch (error) {
-      console.error('❌ Connection reset failed:', error);
+      retryTimerRef.current = setTimeout(() => {
+        setReloadNonce((n) => n + 1);
+      }, 1000);
+    } catch (err) {
+      console.error('❌ Connection reset failed:', err);
       setError('Failed to reset connection. Please refresh the page.');
       setLoading(false);
     }
@@ -207,30 +196,30 @@ const CoursesPage: React.FC = () => {
           <p className="text-yellow-700 mb-6 max-w-md mx-auto">
             {error}
           </p>
-          
+
           <div className="space-y-3 max-w-sm mx-auto">
-            <button 
+            <button
               onClick={handleRetry}
               className="w-full px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 transition-colors"
             >
               🔄 Retry Loading ({retryCount}/{maxRetries})
             </button>
-            
-            <button 
+
+            <button
               onClick={handleConnectionReset}
               className="w-full px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 transition-colors"
             >
               🔧 Reset Connection
             </button>
-            
-            <button 
+
+            <button
               onClick={() => window.location.reload()}
               className="w-full px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
             >
               🔄 Refresh Page
             </button>
           </div>
-          
+
           <details className="mt-6 text-left max-w-md mx-auto">
             <summary className="cursor-pointer text-yellow-700 font-medium">
               Technical Details
@@ -258,14 +247,14 @@ const CoursesPage: React.FC = () => {
           </h2>
           <p className="text-red-600 mb-6">{error}</p>
           <div className="space-x-4">
-            <button 
+            <button
               onClick={handleRetry}
               className="px-6 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
             >
               Try Again
             </button>
-            <button 
-              onClick={() => window.location.href = '/'}
+            <button
+              onClick={() => navigate('/')}
               className="px-6 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors"
             >
               Go Home
@@ -288,7 +277,7 @@ const CoursesPage: React.FC = () => {
           <p className="text-gray-600">
             {retryCount > 0 ? `Retry attempt ${retryCount}/${maxRetries}` : 'Please wait...'}
           </p>
-          
+
           {/* Show cancel button after 10 seconds */}
           <div className="mt-4">
             <button
@@ -309,13 +298,13 @@ const CoursesPage: React.FC = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
       <Breadcrumb items={[{ label: 'Courses' }]} />
-      
+
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-800 mb-4">Available Courses</h1>
         <p className="text-gray-600">
           Browse and enroll in courses to start your learning journey
         </p>
-        
+
         {/* Status indicators */}
         <div className="mt-4 flex items-center space-x-4 text-sm">
           <span className="text-gray-500">
@@ -340,14 +329,14 @@ const CoursesPage: React.FC = () => {
           <h3 className="text-lg font-semibold text-gray-700 mb-2">No Courses Available</h3>
           <p className="text-gray-500 mb-6">There are no published courses at the moment.</p>
           <div className="space-x-4">
-            <button 
+            <button
               onClick={handleRetry}
               className="px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
             >
               🔄 Refresh
             </button>
-            <button 
-              onClick={() => window.location.href = '/'}
+            <button
+              onClick={() => navigate('/')}
               className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors"
             >
               🏠 Go Home
@@ -356,7 +345,7 @@ const CoursesPage: React.FC = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {courses.map(course => (
+          {courses.map((course) => (
             <CourseCard
               key={course.id}
               course={course}
@@ -366,7 +355,7 @@ const CoursesPage: React.FC = () => {
           ))}
         </div>
       )}
-      
+
       {/* Debug info for development */}
       {process.env.NODE_ENV === 'development' && (
         <div className="mt-8 p-4 bg-gray-50 rounded-lg text-xs text-gray-600">
@@ -374,7 +363,6 @@ const CoursesPage: React.FC = () => {
           <div>Courses loaded: {courses.length}</div>
           <div>Enrolled: {enrolledCourseIds.size}</div>
           <div>Retry count: {retryCount}</div>
-          <div>Loading refs: courses={String(loadingCourses.current)}, enrollments={String(loadingEnrollments.current)}</div>
         </div>
       )}
     </div>

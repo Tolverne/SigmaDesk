@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../utils/supabase';
@@ -8,59 +8,78 @@ const LoginPage: React.FC = () => {
   const { user, loading } = useAuth();
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  useEffect(() => {
-    // Handle the OAuth callback
-    const handleAuthCallback = async () => {
-      // Check if we're returning from an OAuth flow
-      const hashParams = new URLSearchParams(window.location.hash.substring(1));
-      const accessToken = hashParams.get('access_token');
-      
-      if (accessToken) {
-        console.log('Access token found in URL, processing...');
-        // Give Supabase time to process the session
-        setTimeout(() => {
-          navigate('/dashboard');
-        }, 100);
-      }
-    };
+  // Prevent multiple navigations (from SIGNED_IN + hash handler + user effect)
+  const navigatedRef = useRef(false);
 
-    handleAuthCallback();
-  }, [navigate]);
-
+  // 1) If already logged in (AuthProvider has a session), go to dashboard
   useEffect(() => {
-    // Check if user is already logged in
-    if (!loading && user) {
-      console.log('User already logged in, redirecting...', user);
-      navigate('/dashboard');
+    if (!loading && user && !navigatedRef.current) {
+      navigatedRef.current = true;
+      navigate('/dashboard', { replace: true });
     }
   }, [user, loading, navigate]);
+
+  // 2) Handle OAuth callback heuristics (implicit flow hash or PKCE code)
+  useEffect(() => {
+    const hash = window.location.hash || '';
+    const search = window.location.search || '';
+    const hasImplicit = hash.includes('access_token=');
+    const hasPkce = new URLSearchParams(search).has('code');
+
+    if ((hasImplicit || hasPkce) && !navigatedRef.current) {
+      // Give Supabase a moment to finalize the session; then route
+      const t = setTimeout(async () => {
+        if (!navigatedRef.current) {
+          // Optionally confirm session presence (defensive)
+          try {
+            const { data } = await supabase.auth.getSession();
+            if (data?.session) {
+              navigatedRef.current = true;
+              navigate('/dashboard', { replace: true });
+            }
+          } catch {
+            // Even if the check fails, rely on AuthProvider's state change
+          }
+        }
+      }, 150);
+      return () => clearTimeout(t);
+    }
+  }, [navigate]);
+
+  // 3) As a backup: navigate on real-time auth state change while on this page
+  useEffect(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN' && !navigatedRef.current) {
+        navigatedRef.current = true;
+        navigate('/dashboard', { replace: true });
+      }
+    });
+    return () => {
+      sub.subscription.unsubscribe();
+    };
+  }, [navigate]);
 
   const handleGoogleLogin = async () => {
     try {
       setIsLoggingIn(true);
       console.log('Starting Google login...');
-      
-      // Use the current origin for redirects (works for both local and production)
+
+      // Keep your current behaviour: return to the site root after OAuth
+      // (Make sure this exact URL is allowed in your Supabase redirect settings.)
       const redirectTo = `${window.location.origin}/`;
-      
+
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: redirectTo,  // This will be localhost:3000 locally, or your Vercel URL in production
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          },
+          redirectTo,
+          queryParams: { access_type: 'offline', prompt: 'consent' },
         },
       });
-      
-      console.log('OAuth response:', { data, error });
-      console.log('Redirect URL used:', redirectTo);
-      
-      if (error) {
-        console.error('OAuth error:', error);
-        throw error;
-      }
+
+      console.log('OAuth response:', { data, error, redirectTo });
+      if (error) throw error;
+
+      // Note: Supabase will redirect the browser; code below may not run.
     } catch (error) {
       console.error('Error during login:', error);
       alert(`Login error: ${error instanceof Error ? error.message : 'Unknown error'}`);

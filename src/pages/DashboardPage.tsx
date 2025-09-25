@@ -8,32 +8,54 @@ import CourseCard from '../components/CourseCard';
 const DashboardPage: React.FC = () => {
   const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
+
   const [enrolledCourses, setEnrolledCourses] = useState<Course[]>([]);
   const [loadingCourses, setLoadingCourses] = useState(false);
+  const [coursesError, setCoursesError] = useState<string | null>(null);
 
+  // Load enrolled courses once the user is known; abort safely on unmount/nav
   useEffect(() => {
-    if (user) {
-      loadEnrolledCourses();
-    }
-  }, [user]);
-
-  const loadEnrolledCourses = async () => {
-    if (!user) return;
-    
-    try {
-      setLoadingCourses(true);
-      const courses = await courseService.getEnrolledCourses(user.id);
-      setEnrolledCourses(courses);
-    } catch (error) {
-      console.error('Error loading enrolled courses:', error);
-    } finally {
+    // If not signed in, clear any previous data
+    if (!user?.id) {
+      setEnrolledCourses([]);
       setLoadingCourses(false);
+      setCoursesError(null);
+      return;
     }
-  };
+
+    const controller = new AbortController();
+    const { signal } = controller;
+
+    const load = async () => {
+      setLoadingCourses(true);
+      setCoursesError(null);
+
+      try {
+        const courses = await courseService.getEnrolledCourses(user.id, { signal });
+        if (!signal.aborted) setEnrolledCourses(courses);
+      } catch (err: any) {
+        if (err?.name === 'AbortError') {
+          // silently ignore aborts
+        } else {
+          console.error('Error loading enrolled courses:', err);
+          if (!signal.aborted) setCoursesError('Failed to load your courses. Please try again.');
+        }
+      } finally {
+        if (!signal.aborted) setLoadingCourses(false);
+      }
+    };
+
+    load();
+    return () => controller.abort();
+  }, [user?.id]);
 
   const handleSignOut = async () => {
-    await signOut();
-    navigate('/login');
+    try {
+      await signOut();
+    } finally {
+      // Keep providers mounted; navigate client-side
+      navigate('/login', { replace: true });
+    }
   };
 
   const getRoleBadgeColor = (role: string | undefined) => {
@@ -73,12 +95,12 @@ const DashboardPage: React.FC = () => {
                 <span className="text-gray-600 w-32">Email:</span>
                 <span className="text-gray-800">{user?.email}</span>
               </div>
-              
+
               <div className="flex items-center">
                 <span className="text-gray-600 w-32">Name:</span>
                 <span className="text-gray-800">{profile?.full_name || 'Not set'}</span>
               </div>
-              
+
               <div className="flex items-center">
                 <span className="text-gray-600 w-32">Role:</span>
                 <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getRoleBadgeColor(profile?.role)}`}>
@@ -102,7 +124,7 @@ const DashboardPage: React.FC = () => {
               {profile?.role === 'student' && 'Student Resources'}
               {!profile?.role && 'Getting Started'}
             </h3>
-            
+
             <div className="space-y-2 text-gray-600">
               {profile?.role === 'student' && (
                 <>
@@ -111,7 +133,7 @@ const DashboardPage: React.FC = () => {
                   <p>• Track progress</p>
                 </>
               )}
-              
+
               {profile?.role === 'teacher' && (
                 <>
                   <p>• Manage classes</p>
@@ -119,7 +141,7 @@ const DashboardPage: React.FC = () => {
                   <p>• Create shared canvases</p>
                 </>
               )}
-              
+
               {(profile?.role === 'admin' || profile?.role === 'super_admin') && (
                 <>
                   <p>• Manage users</p>
@@ -139,23 +161,23 @@ const DashboardPage: React.FC = () => {
           <div className="mt-8">
             <h3 className="text-lg font-semibold text-gray-700 mb-3">Quick Actions</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <button 
+              <button
                 className="p-4 bg-sigma-blue text-white rounded-lg hover:bg-blue-700 transition-colors"
                 onClick={() => navigate('/courses')}
               >
                 Browse Courses
               </button>
-              
+
               {profile?.role !== 'student' && (
-                <button 
+                <button
                   className="p-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                   onClick={() => navigate('/manage')}
                 >
                   Management Panel
                 </button>
               )}
-              
-              <button 
+
+              <button
                 className="p-4 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
                 onClick={() => navigate('/profile')}
               >
@@ -164,13 +186,13 @@ const DashboardPage: React.FC = () => {
             </div>
           </div>
 
-          {/* My Courses Section - New Addition */}
+          {/* My Courses Section */}
           {profile?.role === 'student' && (
             <div className="mt-8">
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-lg font-semibold text-gray-700">My Courses</h3>
                 {enrolledCourses.length > 2 && (
-                  <button 
+                  <button
                     onClick={() => navigate('/courses')}
                     className="text-sigma-blue hover:underline text-sm"
                   >
@@ -178,22 +200,51 @@ const DashboardPage: React.FC = () => {
                   </button>
                 )}
               </div>
-              
+
               {loadingCourses ? (
                 <div className="text-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sigma-blue mx-auto"></div>
                   <p className="mt-2 text-sm text-gray-600">Loading courses...</p>
                 </div>
+              ) : coursesError ? (
+                <div className="text-center py-8 bg-red-50 rounded-lg">
+                  <p className="text-red-600 mb-3">{coursesError}</p>
+                  <button
+                    onClick={() => {
+                      // manual retry: clear cache & re-run effect by toggling user id dependency
+                      courseService.clearCache();
+                      // trigger a re-load by simulating a dependency change
+                      // (or navigate away and back)
+                      // simplest here: re-run the fetch directly
+                      const controller = new AbortController();
+                      const { signal } = controller;
+                      setLoadingCourses(true);
+                      setCoursesError(null);
+                      courseService.getEnrolledCourses(user!.id, { signal })
+                        .then((c) => setEnrolledCourses(c))
+                        .catch((err) => {
+                          if (err?.name !== 'AbortError') {
+                            console.error(err);
+                            setCoursesError('Failed to load your courses. Please try again.');
+                          }
+                        })
+                        .finally(() => setLoadingCourses(false));
+                    }}
+                    className="px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+                  >
+                    Try Again
+                  </button>
+                </div>
               ) : enrolledCourses.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {enrolledCourses.slice(0, 2).map(course => (
+                  {enrolledCourses.slice(0, 2).map((course) => (
                     <CourseCard key={course.id} course={course} isEnrolled={true} />
                   ))}
                 </div>
               ) : (
                 <div className="text-center py-8 bg-gray-50 rounded-lg">
                   <p className="text-gray-600 mb-3">You haven't enrolled in any courses yet.</p>
-                  <button 
+                  <button
                     onClick={() => navigate('/courses')}
                     className="px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
                   >
@@ -209,7 +260,7 @@ const DashboardPage: React.FC = () => {
             <div className="mt-8">
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-lg font-semibold text-gray-700">Course Management</h3>
-                <button 
+                <button
                   onClick={() => navigate('/courses')}
                   className="text-sigma-blue hover:underline text-sm"
                 >
@@ -218,11 +269,11 @@ const DashboardPage: React.FC = () => {
               </div>
               <div className="text-center py-8 bg-gray-50 rounded-lg">
                 <p className="text-gray-600">
-                  {profile?.role === 'teacher' 
+                  {profile?.role === 'teacher'
                     ? 'View and manage courses you teach'
                     : 'Create and manage all courses in the system'}
                 </p>
-                <button 
+                <button
                   onClick={() => navigate('/courses')}
                   className="mt-3 px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
                 >

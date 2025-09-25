@@ -8,38 +8,40 @@ interface LayoutProps {
 }
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
-  const { user, profile, signOut, hasRLSIssue } = useAuth();
+  // ⬇️ Added clearErrors from AuthContext (non-breaking addition we made earlier)
+  const { user, profile, signOut, hasRLSIssue, clearErrors } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [isSigningOut, setIsSigningOut] = useState(false);
 
-  // ADDED: Clear any persistent error states when navigating
+  // Clear any persistent error states and cached requests when navigating
   useEffect(() => {
-    // Clear any cached requests when navigating to prevent error persistence
-    if ((window as any).courseService?.clearCache) {
-      (window as any).courseService.clearCache();
+    // Clear transient auth/DB flags (e.g., after visiting a broken link)
+    if (typeof clearErrors === 'function') {
+      clearErrors();
     }
+    // Clear any cached requests when navigating to prevent error persistence
+    //if ((window as any).courseService?.clearCache) {
+    //  (window as any).courseService.clearCache();
+    //}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
 
   const handleSignOut = async () => {
     if (isSigningOut) return; // Prevent double-click
-    
     try {
       setIsSigningOut(true);
       console.log('🔄 Layout: Starting sign out process...');
-      
+
       await signOut();
-      
-      // Force navigation to login after a short delay
-      setTimeout(() => {
-        console.log('🏠 Layout: Redirecting to login...');
-        window.location.href = '/login'; // Use window.location for hard redirect
-      }, 100);
-      
+
+      // Use client-side navigation to keep providers mounted and avoid races
+      console.log('🏠 Layout: Redirecting to login...');
+      navigate('/login', { replace: true });
     } catch (error) {
       console.error('❌ Layout: Error during sign out:', error);
-      // Even if there's an error, try to redirect
-      window.location.href = '/login';
+      // Fallback to client-side navigation even on error
+      navigate('/login', { replace: true });
     } finally {
       setIsSigningOut(false);
     }
@@ -62,12 +64,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 Where Every Step Counts
               </span>
             </div>
-            
+
             <nav className="flex items-center space-x-4">
               {user ? (
                 <>
                   {/* Navigation Links */}
-                  <Link 
+                  <Link
                     to="/courses"
                     className={`text-gray-600 hover:text-gray-800 transition-colors ${
                       location.pathname.startsWith('/courses') ? 'text-sigma-blue font-semibold' : ''
@@ -75,56 +77,58 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   >
                     Courses
                   </Link>
-                  
-                  <Link 
-                    to="/dashboard" 
+
+                  <Link
+                    to="/dashboard"
                     className={`text-gray-600 hover:text-gray-800 transition-colors ${
                       location.pathname === '/dashboard' ? 'text-sigma-blue font-semibold' : ''
                     }`}
                   >
                     Dashboard
                   </Link>
-                  
+
                   {/* Management link for non-students */}
                   {profile?.role && profile.role !== 'student' && (
-                    <Link 
-                      to="/manage" 
+                    <Link
+                      to="/manage"
                       className="text-gray-600 hover:text-gray-800 transition-colors"
                     >
                       Manage
                     </Link>
                   )}
-                  
+
                   {/* User Info */}
                   <div className="flex items-center space-x-2">
                     <span className="text-sm text-gray-500">
                       {profile?.full_name || user.email}
                     </span>
-                    
+
                     {/* Role Badge */}
                     {profile?.role && (
-                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                        profile.role === 'admin' || profile.role === 'super_admin' 
-                          ? 'bg-red-100 text-red-800'
-                          : profile.role === 'teacher'
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-blue-100 text-blue-800'
-                      }`}>
+                      <span
+                        className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                          profile.role === 'admin' || profile.role === 'super_admin'
+                            ? 'bg-red-100 text-red-800'
+                            : profile.role === 'teacher'
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-blue-100 text-blue-800'
+                        }`}
+                      >
                         {profile.role.toUpperCase()}
                       </span>
                     )}
-                    
+
                     {!profile && (
-                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                        hasRLSIssue 
-                          ? 'bg-red-100 text-red-800' 
-                          : 'bg-yellow-100 text-yellow-800'
-                      }`}>
+                      <span
+                        className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                          hasRLSIssue ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
+                        }`}
+                      >
                         {hasRLSIssue ? 'DB ISSUE' : 'SETUP NEEDED'}
                       </span>
                     )}
                   </div>
-                  
+
                   {/* Sign Out Button */}
                   <button
                     onClick={handleSignOut}
@@ -136,7 +140,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 </>
               ) : (
                 /* Sign In Link for non-authenticated users */
-                <Link 
+                <Link
                   to="/login"
                   className="px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
                 >
@@ -152,7 +156,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Show RLS error banner when database issues are detected */}
         <RLSErrorBanner />
-        
+
         {children}
       </main>
 
@@ -162,8 +166,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           <div className="max-w-7xl mx-auto px-4 flex justify-between items-center">
             <span>Development Mode</span>
             <span>
-              User: {user ? '✅' : '❌'} | 
-              Profile: {profile ? `✅ ${profile.role}` : hasRLSIssue ? '🚨 RLS Issue' : '❌'} | 
+              User: {user ? '✅' : '❌'} |{' '}
+              Profile: {profile ? `✅ ${profile.role}` : hasRLSIssue ? '🚨 RLS Issue' : '❌'} |{' '}
               Path: {location.pathname}
             </span>
           </div>

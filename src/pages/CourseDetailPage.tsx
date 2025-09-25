@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { courseService } from '../services/courseService';
@@ -10,39 +10,86 @@ const CourseDetailPage: React.FC = () => {
   const { courseId } = useParams<{ courseId: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
+
   const [course, setCourse] = useState<Course | null>(null);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // A nonce to trigger reloads (if you add a retry button later)
+  const [reloadNonce] = useState(0);
+
+  // keep a ref to detect unmount and avoid state updates after abort
+  const mountedRef = useRef(true);
 
   useEffect(() => {
-    if (courseId) {
-      loadCourseData();
-    }
-  }, [courseId, user]);
+    mountedRef.current = true;
 
-  const loadCourseData = async () => {
-    if (!courseId) return;
-    
-    try {
-      setLoading(true);
-      
-      // Load course details
-      const courseData = await courseService.getCourseDetails(courseId);
-      setCourse(courseData);
-      setTopics(courseData.topics || []);
-      
-      // Check enrollment
-      if (user) {
-        const enrolled = await courseService.checkEnrollment(courseId, user.id);
-        setIsEnrolled(enrolled);
+    // Abort controller for this load
+    const controller = new AbortController();
+    const { signal } = controller;
+
+    const load = async () => {
+      if (!courseId) {
+        if (mountedRef.current) {
+          setCourse(null);
+          setTopics([]);
+          setIsEnrolled(false);
+          setError('Course not found');
+          setLoading(false);
+        }
+        return;
       }
-    } catch (error) {
-      console.error('Error loading course:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+
+      if (signal.aborted) return;
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        // Load course details and enrollment in parallel
+        const [details, enrolled] = await Promise.all([
+          courseService.getCourseDetails(courseId, { signal }),
+          user ? courseService.checkEnrollment(courseId, user.id, { signal }) : Promise.resolve(false),
+        ]);
+
+        if (!mountedRef.current || signal.aborted) return;
+
+        setCourse(details);
+        setTopics(details?.topics || []);
+        setIsEnrolled(!!enrolled);
+      } catch (err: any) {
+        if (err?.name === 'AbortError') {
+          // silent on abort
+          return;
+        }
+        console.error('Error loading course:', err);
+        if (mountedRef.current && !signal.aborted) {
+          const msg = String(err?.message || '');
+          if (msg.toLowerCase().includes('not found')) {
+            setError('Course not found');
+          } else if (msg.toLowerCase().includes('jwt') || msg.toLowerCase().includes('session')) {
+            setError('Your session has expired. Please sign in again.');
+          } else {
+            setError('Failed to load course. Please try again.');
+          }
+        }
+      } finally {
+        if (mountedRef.current && !signal.aborted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    load();
+
+    return () => {
+      mountedRef.current = false;
+      controller.abort();
+    };
+    // Reload when the course or user changes (enrollment depends on user)
+  }, [courseId, user?.id, reloadNonce]);
 
   const handleEnroll = async () => {
     if (!user || !courseId) {
@@ -53,19 +100,23 @@ const CourseDetailPage: React.FC = () => {
 
     try {
       await courseService.enrollInCourse(courseId, user.id);
-      setIsEnrolled(true);
+      if (mountedRef.current) {
+        setIsEnrolled(true);
+      }
       alert('Successfully enrolled!');
     } catch (error: any) {
-      alert(error.message || 'Failed to enroll');
+      alert(error?.message || 'Failed to enroll');
     }
   };
 
   const startLearning = () => {
-    if (topics.length > 0 && topics[0].lessons && topics[0].lessons.length > 0) {
-      navigate(`/courses/${courseId}/lessons/${topics[0].lessons[0].id}`);
+    const firstLessonId = topics?.[0]?.lessons?.[0]?.id;
+    if (firstLessonId) {
+      navigate(`/courses/${courseId}/lessons/${firstLessonId}`);
     }
   };
 
+  // Loading state
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
@@ -74,16 +125,52 @@ const CourseDetailPage: React.FC = () => {
     );
   }
 
+  // Error / Not found state
+  if (error && !course) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        <Breadcrumb items={[{ label: 'Courses', path: '/courses' }]} />
+        <div className="text-center py-12 bg-red-50 rounded-lg">
+          <div className="text-red-500 text-5xl mb-4">⚠️</div>
+          <h2 className="text-xl font-semibold text-red-800 mb-2">
+            {error === 'Course not found' ? 'Course Not Found' : 'Failed to Load Course'}
+          </h2>
+          <p className="text-red-600 mb-6">
+            {error === 'Course not found'
+              ? 'The course you are looking for does not exist or may have been removed.'
+              : error}
+          </p>
+          <div className="space-x-4">
+            <button
+              onClick={() => navigate('/courses')}
+              className="px-6 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+            >
+              Back to Courses
+            </button>
+            <button
+              onClick={() => navigate('/')}
+              className="px-6 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors"
+            >
+              Home
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!course) {
-    return <div>Course not found</div>;
+    return <div className="max-w-7xl mx-auto px-4 py-8">Course not found</div>;
   }
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
-      <Breadcrumb items={[
-        { label: 'Courses', path: '/courses' },
-        { label: course.title }
-      ]} />
+      <Breadcrumb
+        items={[
+          { label: 'Courses', path: '/courses' },
+          { label: course.title },
+        ]}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Course Info */}
@@ -126,10 +213,7 @@ const CourseDetailPage: React.FC = () => {
 
         {/* Course Navigation */}
         <div className="lg:col-span-1">
-          <CourseNavigation
-            topics={topics}
-            courseId={courseId!}
-          />
+          <CourseNavigation topics={topics} courseId={courseId!} />
         </div>
       </div>
     </div>

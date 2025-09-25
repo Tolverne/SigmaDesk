@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { courseService } from '../services/courseService';
+import { supabase } from '../utils/supabase';
 import { Lesson } from '../types/course.types';
 import Breadcrumb from '../components/Breadcrumb';
 import { ChevronLeft, ChevronRight, CheckCircle } from 'lucide-react';
@@ -10,41 +11,84 @@ const LessonPage: React.FC = () => {
   const { courseId, lessonId } = useParams<{ courseId: string; lessonId: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
+
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [loading, setLoading] = useState(true);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
-    if (lessonId) {
-      loadLesson();
-    }
-  }, [lessonId]);
-
-  const loadLesson = async () => {
     if (!lessonId) return;
 
-    try {
-      const data = await courseService.getLesson(lessonId);
-      setLesson(data);
-      setIsCompleted(data.is_completed || false);
-    } catch (error) {
-      console.error('Error loading lesson:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const controller = new AbortController();
+    const { signal } = controller;
+
+    const load = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        // Fetch lesson
+        const data = await courseService.getLesson(lessonId, { signal });
+        if (signal.aborted) return;
+        setLesson(data);
+
+        // Fetch user progress (separate, lightweight)
+        if (user?.id) {
+          try {
+            const { data: prog } = await supabase
+              .from('user_progress')
+              .select('is_completed')
+              .eq('user_id', user.id)
+              .eq('lesson_id', lessonId)
+              .maybeSingle();
+
+            if (!signal.aborted) setIsCompleted(!!prog?.is_completed);
+          } catch (e) {
+            // non-fatal
+            if (!signal.aborted) setIsCompleted(false);
+          }
+        } else {
+          setIsCompleted(false);
+        }
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return;
+        console.error('Error loading lesson:', err);
+        if (!signal.aborted) {
+          const msg = String(err?.message || '').toLowerCase();
+          if (msg.includes('not found')) {
+            setError('Lesson not found');
+          } else if (msg.includes('jwt') || msg.includes('session')) {
+            setError('Your session has expired. Please sign in again.');
+          } else {
+            setError('Failed to load lesson. Please try again.');
+          }
+        }
+      } finally {
+        if (!signal.aborted) setLoading(false);
+      }
+    };
+
+    load();
+    return () => controller.abort();
+  }, [lessonId, user?.id]);
 
   const handleMarkComplete = async () => {
-    if (!lessonId || !user) return;
+    if (!lessonId || !user || updating) return;
 
+    setUpdating(true);
     try {
       await courseService.updateProgress(lessonId, user.id, !isCompleted);
-      setIsCompleted(!isCompleted);
-    } catch (error) {
-      console.error('Error updating progress:', error);
+      setIsCompleted((prev) => !prev);
+    } catch (err) {
+      console.error('Error updating progress:', err);
+    } finally {
+      setUpdating(false);
     }
   };
 
+  // Loading state
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
@@ -53,8 +97,43 @@ const LessonPage: React.FC = () => {
     );
   }
 
+  // Error / Not found state
+  if (error && !lesson) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        <Breadcrumb items={[
+          { label: 'Courses', path: '/courses' },
+          { label: 'Course', path: `/courses/${courseId}` },
+        ]} />
+        <div className="text-center py-12 bg-red-50 rounded-lg">
+          <div className="text-red-500 text-5xl mb-4">⚠️</div>
+          <h2 className="text-xl font-semibold text-red-800 mb-2">
+            {error === 'Lesson not found' ? 'Lesson Not Found' : 'Failed to Load Lesson'}
+          </h2>
+          <p className="text-red-600 mb-6">
+            {error}
+          </p>
+          <div className="space-x-4">
+            <button
+              onClick={() => navigate(`/courses/${courseId}`)}
+              className="px-6 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+            >
+              Back to Course
+            </button>
+            <button
+              onClick={() => navigate('/courses')}
+              className="px-6 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors"
+            >
+              Browse Courses
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!lesson) {
-    return <div>Lesson not found</div>;
+    return <div className="max-w-4xl mx-auto px-4 py-8">Lesson not found</div>;
   }
 
   return (
@@ -82,16 +161,15 @@ const LessonPage: React.FC = () => {
             </div>
             <button
               onClick={handleMarkComplete}
+              disabled={!user || updating}
               className={`flex items-center px-4 py-2 rounded-md transition-colors ${
                 isCompleted
                   ? 'bg-green-100 text-green-700 hover:bg-green-200'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
+              } ${(!user || updating) ? 'opacity-60 cursor-not-allowed' : ''}`}
             >
-              <CheckCircle className={`w-5 h-5 mr-2 ${
-                isCompleted ? 'fill-current' : ''
-              }`} />
-              {isCompleted ? 'Completed' : 'Mark Complete'}
+              <CheckCircle className={`w-5 h-5 mr-2 ${isCompleted ? 'fill-current' : ''}`} />
+              {isCompleted ? 'Completed' : updating ? 'Updating...' : 'Mark Complete'}
             </button>
           </div>
         </div>
@@ -117,9 +195,11 @@ const LessonPage: React.FC = () => {
               <h2 className="text-lg font-semibold mb-3">Content</h2>
               <div className="bg-gray-50 rounded-lg p-6">
                 {/* Basic rendering - will be enhanced with LaTeX support */}
-                <div dangerouslySetInnerHTML={{ 
-                  __html: lesson.content_latex.replace(/\n/g, '<br/>') 
-                }} />
+                <div
+                  dangerouslySetInnerHTML={{
+                    __html: lesson.content_latex.replace(/\n/g, '<br/>'),
+                  }}
+                />
               </div>
             </div>
           )}

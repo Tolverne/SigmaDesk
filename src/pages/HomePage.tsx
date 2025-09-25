@@ -6,24 +6,39 @@ const HomePage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    checkConnection();
-  }, []);
+    const controller = new AbortController();
+    const { signal } = controller;
+    let cancelled = false;
 
-  const checkConnection = async () => {
-    try {
-      // Simple health check - just see if we can reach Supabase
-      const { error } = await supabase.from('organizations').select('count').limit(1).single();
-      
-      // Even if there's an error (like no rows), if we got a response, we're connected
-      setConnected(true);
-      console.log('✅ Supabase connected');
-    } catch (err) {
-      console.error('❌ Supabase connection error:', err);
-      setConnected(false);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const checkConnection = async () => {
+      setLoading(true);
+      try {
+        // Lightweight health check: HEAD-style select with count to avoid fetching rows
+        // If the call returns (even with no rows), we consider the connection healthy.
+        await supabase
+          .from('organizations')
+          .select('id', { count: 'exact', head: true })
+          .limit(1);
+
+        if (cancelled || signal.aborted) return;
+        setConnected(true);
+        console.log('✅ Supabase connected');
+      } catch (err) {
+        if (cancelled || signal.aborted) return;
+        console.error('❌ Supabase connection error:', err);
+        setConnected(false);
+      } finally {
+        if (!cancelled && !signal.aborted) setLoading(false);
+      }
+    };
+
+    checkConnection();
+
+    return () => {
+      cancelled = true;
+      controller.abort(); // note: Supabase doesn't support abort, but we guard state updates
+    };
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -54,15 +69,15 @@ const HomePage: React.FC = () => {
             </div>
             
             <div className="flex items-center space-x-2">
-              <div className={`w-3 h-3 rounded-full ${
-                loading ? 'bg-yellow-500 animate-pulse' : 
-                connected ? 'bg-green-500' : 'bg-red-500'
-              }`}></div>
+              <div
+                className={`w-3 h-3 rounded-full ${
+                  loading ? 'bg-yellow-500 animate-pulse' :
+                  connected ? 'bg-green-500' : 'bg-red-500'
+                }`}
+              ></div>
               <span className="text-sm text-gray-600">
-                Supabase Connection: {
-                  loading ? 'Checking...' : 
-                  connected ? 'Connected' : 'Not Connected'
-                }
+                Supabase Connection:{' '}
+                {loading ? 'Checking...' : connected ? 'Connected' : 'Not Connected'}
               </span>
             </div>
             
