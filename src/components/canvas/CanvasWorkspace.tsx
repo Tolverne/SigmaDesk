@@ -46,40 +46,67 @@ const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = (props) => {
   const [strokes, setStrokes] = useState<CanvasStroke[]>([]);
   const [state, setState] = useState<CanvasState>(DEFAULT_STATE);
   const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [loadingSession, setLoadingSession] = useState<boolean>(true);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
   const drawingPointsRef = useRef<Point[]>([]);
   const nextOrderRef = useRef<number>(1);
 
-  // Create or fetch session (depending on prop shape)
+  // Session fetch — split by prop shape with precise deps
   useEffect(() => {
     let cancelled = false;
 
-    (async () => {
+    const loadBySessionId = async (id: string) => {
       try {
-        if (isBySessionId(props)) {
-          const s = await canvasService.getCanvasSessionById(props.sessionId);
-          if (!cancelled) setSession(s);
-        } else {
-          if (!user) return;
-          const s = await canvasService.getOrCreateSession(
-            props.lessonId,
-            user.id,
-            props.slotIndex,
-            props.canvasType ?? 'student'
-          );
-          if (!cancelled) setSession(s);
-        }
+        setLoadingSession(true);
+        console.log('[CanvasWorkspace] get by sessionId →', id);
+        const s = await canvasService.getCanvasSessionById(id);
+        if (!cancelled) setSession(s);
       } catch (err) {
-        console.error('CanvasWorkspace: failed to get/create session', err);
+        console.error('[CanvasWorkspace] failed to get session by id', err);
+        if (!cancelled) setSession(null);
+      } finally {
+        if (!cancelled) setLoadingSession(false);
       }
-    })();
-
-    return () => {
-      cancelled = true;
     };
-  }, [user, props]);
+
+    const loadByLessonSlot = async (lessonId: string, uid: string | undefined, slotIndex: number, canvasType?: CanvasType) => {
+      if (!uid) {
+        console.warn('[CanvasWorkspace] no user; cannot create personal session. Waiting for Auth…');
+        setLoadingSession(false);
+        return;
+      }
+      try {
+        setLoadingSession(true);
+        console.log('[CanvasWorkspace] getOrCreate by lesson slot →', { lessonId, uid, slotIndex, canvasType: canvasType ?? 'student' });
+        const s = await canvasService.getOrCreateSession(lessonId, uid, slotIndex, canvasType ?? 'student');
+        if (!cancelled) setSession(s);
+      } catch (err) {
+        console.error('[CanvasWorkspace] failed to get/create session', err);
+        if (!cancelled) setSession(null);
+      } finally {
+        if (!cancelled) setLoadingSession(false);
+      }
+    };
+
+    if (isBySessionId(props)) {
+      // depend ONLY on sessionId
+      loadBySessionId(props.sessionId);
+    } else {
+      // depend ONLY on lessonId, slotIndex, user.id, canvasType
+      loadByLessonSlot(props.lessonId, user?.id, props.slotIndex, props.canvasType);
+    }
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    // precise deps
+    (isBySessionId(props) ? props.sessionId : props.lessonId),
+    (isBySessionId(props) ? undefined : props.slotIndex),
+    (isBySessionId(props) ? undefined : props.canvasType),
+    (isBySessionId(props) ? undefined : user?.id),
+  ]);
 
   // Load strokes for the session (with offline fallback)
   useEffect(() => {
@@ -88,13 +115,14 @@ const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = (props) => {
       if (!session) return;
 
       try {
+        console.log('[CanvasWorkspace] fetching strokes for session', session.id);
         const list = await canvasService.getSessionStrokes(session.id);
         if (!cancelled) {
           setStrokes(list);
           nextOrderRef.current = (list[list.length - 1]?.stroke_order ?? 0) + 1;
         }
       } catch (err) {
-        console.warn('Failed to load online strokes; trying offline cache…', err);
+        console.warn('[CanvasWorkspace] online strokes failed; trying offline…', err);
         try {
           const offline = await offlineCanvasService.getOfflineStrokes(session.id);
           if (!cancelled && offline?.length) {
@@ -102,13 +130,13 @@ const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = (props) => {
             nextOrderRef.current = (offline[offline.length - 1]?.stroke_order ?? 0) + 1;
           }
         } catch (e) {
-          console.error('Offline strokes fetch also failed', e);
+          console.error('[CanvasWorkspace] offline strokes fetch failed', e);
         }
       }
     })();
 
     return () => { cancelled = true; };
-  }, [session]);
+  }, [session?.id]);
 
   // Online/offline indicator
   useEffect(() => {
@@ -123,7 +151,7 @@ const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = (props) => {
   }, []);
 
   // Canvas setup / resize
-  const redraw = () => {
+  const redraw = useCallback(() => {
     const canvas = canvasRef.current;
     const ctx = ctxRef.current;
     if (!canvas || !ctx) return;
@@ -170,7 +198,7 @@ const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = (props) => {
     }
 
     ctx.restore();
-  };
+  }, [strokes]);
 
   const resize = useCallback(() => {
     const canvas = canvasRef.current;
@@ -184,12 +212,11 @@ const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = (props) => {
     ctxRef.current = ctx;
     ctx.scale(dpr, dpr);
     redraw();
-  }, [strokes, state.currentColor, state.currentTool, state.currentWidth]);
+  }, [redraw]);
 
   useEffect(() => {
     resize();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [strokes]);
+  }, [resize, strokes.length]);
 
   // Toolbar handlers
   const handleToolChange = (tool: 'pen' | 'eraser') => setState((s) => ({ ...s, currentTool: tool }));
@@ -215,18 +242,26 @@ const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = (props) => {
       id: `local_${stroke.stroke_order}_${stroke.timestamp_ms}`,
       created_at: new Date().toISOString(),
     };
+
+    console.log('[CanvasWorkspace] pushStroke → optimistic add', {
+      session: session.id, order: stroke.stroke_order, pts: points.length, tool: state.currentTool,
+    });
+
     setStrokes((prev) => [...prev, optimistic]);
 
     try {
       if (isOnline) {
         const saved = await canvasService.saveStroke(stroke);
+        console.log('[CanvasWorkspace] pushStroke → server ack');
+        // We don’t have the server id (RLS-safe insert w/o select), keep optimistic row
+        // but we still replace with “saved” echo to keep timestamps consistent:
         setStrokes((prev) => prev.map((s) => (s.id === optimistic.id ? saved : s)));
       } else {
+        console.log('[CanvasWorkspace] offline → staging stroke');
         await offlineCanvasService.saveStrokeOffline({ ...(optimistic as any), needs_sync: true });
       }
     } catch (err) {
-      console.error('Failed to persist stroke', err);
-      // rollback optimistic insert
+      console.error('[CanvasWorkspace] pushStroke failed, rolling back', err);
       setStrokes((prev) => prev.filter((s) => s.id !== optimistic.id));
     }
   };
@@ -234,6 +269,10 @@ const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = (props) => {
   // Pointer handlers
   const onPointerDown = (e: React.PointerEvent) => {
     if (readOnly) return;
+    if (!session) {
+      console.warn('[CanvasWorkspace] pointerDown ignored; no session yet');
+      return;
+    }
     const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
     drawingPointsRef.current = [
       { x: e.clientX - rect.left, y: e.clientY - rect.top, pressure: e.pressure ?? 1, timestamp: Date.now() },
@@ -242,8 +281,7 @@ const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = (props) => {
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
-    if (readOnly) return;
-    if (!state.isDrawing) return;
+    if (readOnly || !state.isDrawing) return;
     const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
     drawingPointsRef.current.push({
       x: e.clientX - rect.left,
@@ -275,8 +313,7 @@ const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = (props) => {
   };
 
   const onPointerUp = async () => {
-    if (readOnly) return;
-    if (!state.isDrawing) return;
+    if (readOnly || !state.isDrawing) return;
     const points = drawingPointsRef.current.slice();
     drawingPointsRef.current = [];
     setState((s) => ({ ...s, isDrawing: false }));
@@ -327,6 +364,11 @@ const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = (props) => {
 
       <div className="border border-gray-200 rounded-b-lg overflow-hidden bg-white">
         <div className="relative" style={{ height: 400 }}>
+          {loadingSession && (
+            <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-500 z-10">
+              Preparing Canvas…
+            </div>
+          )}
           <canvas
             ref={canvasRef}
             className="w-full h-full block touch-none"

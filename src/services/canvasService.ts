@@ -49,6 +49,8 @@ export const canvasService = {
     };
     if (canvasType) payload.canvas_type = canvasType;
 
+    console.log('[canvasService.createCanvasSession] inserting session', payload);
+
     const { data, error } = await supabase
       .from('canvas_sessions')
       .insert(payload)
@@ -58,10 +60,13 @@ export const canvasService = {
     if (error) {
       // Unique violation → session already exists, fetch it (with same key shape)
       if ((error as any).code === '23505') {
+        console.log('[canvasService.createCanvasSession] duplicate → fetching existing');
         return this.getCanvasSession(lessonId, userId, slotIndex, canvasType);
       }
+      console.error('[canvasService.createCanvasSession] error:', error);
       throw error;
     }
+    console.log('[canvasService.createCanvasSession] created OK', data?.id);
     return data as CanvasSession;
   },
   // New End
@@ -103,15 +108,25 @@ export const canvasService = {
 
     if (canvasType) q = q.eq('canvas_type', canvasType);
 
+    console.log('[canvasService.getCanvasSession] querying', {
+      lessonId,
+      userId,
+      slotIndex,
+      canvasType: canvasType ?? '(any)',
+    });
+
     const { data, error } = await q.single();
 
     if (error) {
       if ((error as any).code === 'PGRST116') {
         // not found → create it with the same type (if provided)
+        console.log('[canvasService.getCanvasSession] not found → creating');
         return this.createCanvasSession(lessonId, userId, slotIndex, canvasType);
       }
+      console.error('[canvasService.getCanvasSession] error:', error);
       throw error;
     }
+    console.log('[canvasService.getCanvasSession] found', data?.id);
     return data as CanvasSession;
   },
   // New End
@@ -135,98 +150,144 @@ export const canvasService = {
   // New End
 
   async getCanvasSessionById(sessionId: string): Promise<CanvasSession> {
+    console.log('[canvasService.getCanvasSessionById] id', sessionId);
     const { data, error } = await supabase
       .from('canvas_sessions')
       .select('*')
       .eq('id', sessionId)
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('[canvasService.getCanvasSessionById] error:', error);
+      throw error;
+    }
     return data as CanvasSession;
   },
 
   // Strokes
   async saveStroke(stroke: Omit<CanvasStroke, 'id' | 'created_at'>): Promise<CanvasStroke> {
-    const { data, error } = await supabase
-      .from('canvas_strokes')
-      .insert(stroke)
-      .select()
-      .single();
+    // IMPORTANT: we do NOT call .select() here to avoid RLS "insert ok / select denied" problems.
+    // We log verbosely so you can see every insert attempt from the UI.
+    console.log('[canvasService.saveStroke] insert →', {
+      session_id: (stroke as any).session_id,
+      stroke_order: (stroke as any).stroke_order,
+      tool_type: (stroke as any).tool_type,
+      width: (stroke as any).stroke_width,
+      color: (stroke as any).stroke_color,
+      has_points: !!(stroke as any)?.stroke_data?.points?.length,
+    });
 
-    if (error) throw error;
-    return data as CanvasStroke;
+    const { error } = await supabase.from('canvas_strokes').insert(stroke);
+
+    if (error) {
+      console.error('[canvasService.saveStroke] insert failed:', {
+        message: error.message,
+        code: (error as any).code,
+        details: (error as any).details,
+        hint: (error as any).hint,
+      });
+      throw error;
+    }
+
+    // Fire-and-forget: bump session.updated_at
+    void supabase
+      .from('canvas_sessions')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', (stroke as any).session_id);
+
+    console.log('[canvasService.saveStroke] insert OK (no select).');
+    // Echo a minimal stroke so optimistic UI can keep its placeholder
+    return { ...(stroke as any), id: undefined, created_at: new Date().toISOString() } as CanvasStroke;
   },
 
+  // New Start: batch insert without returning rows (avoids RLS select issues)
   async saveStrokesBatch(strokes: Omit<CanvasStroke, 'id' | 'created_at'>[]): Promise<CanvasStroke[]> {
     if (strokes.length === 0) return [];
-    const { data, error } = await supabase
-      .from('canvas_strokes')
-      .insert(strokes)
-      .select();
+    console.log('[canvasService.saveStrokesBatch] count', strokes.length);
 
-    if (error) throw error;
-    return (data || []) as CanvasStroke[];
+    const { error } = await supabase.from('canvas_strokes').insert(strokes);
+
+    if (error) {
+      console.error('[canvasService.saveStrokesBatch] error:', error);
+      throw error;
+    }
+    // Return minimal echoes
+    const now = new Date().toISOString();
+    return strokes.map((s) => ({ ...(s as any), id: undefined, created_at: now } as CanvasStroke));
   },
+  // New End
 
   async getSessionStrokes(sessionId: string): Promise<CanvasStroke[]> {
+    console.log('[canvasService.getSessionStrokes] session', sessionId);
     const { data, error } = await supabase
       .from('canvas_strokes')
       .select('*')
       .eq('session_id', sessionId)
-      .order('stroke_order'); // unchanged sort
+      .order('stroke_order', { ascending: true }); // explicit sort
 
-    if (error) throw error;
+    console.log('[canvasService.getSessionStrokes]', sessionId, '→', (data || []).length, 'rows');
+
+    if (error) {
+      console.error('[canvasService.getSessionStrokes] error:', error);
+      throw error;
+    }
     return (data || []) as CanvasStroke[];
   },
 
   async deleteStroke(strokeId: string): Promise<void> {
+    console.log('[canvasService.deleteStroke] id', strokeId);
     const { error } = await supabase.from('canvas_strokes').delete().eq('id', strokeId);
-    if (error) throw error;
+    if (error) {
+      console.error('[canvasService.deleteStroke] error:', error);
+      throw error;
+    }
   },
 
   async clearCanvas(sessionId: string): Promise<void> {
+    console.log('[canvasService.clearCanvas] session', sessionId);
     const { error } = await supabase.from('canvas_strokes').delete().eq('session_id', sessionId);
-    if (error) throw error;
+    if (error) {
+      console.error('[canvasService.clearCanvas] error:', error);
+      throw error;
+    }
   },
 
   // Teacher view
-  // Old Start: previously included all sessions for a lesson (any type)
-  // async getStudentSessions(lessonId: string): Promise<(CanvasSession & { user_name: string })[]> {
-  //   const { data, error } = await supabase
-  //     .from('canvas_sessions')
-  //     .select(`
-  //       *,
-  //       user_profiles!inner(full_name)
-  //     `)
-  //     .eq('lesson_id', lessonId)
-  //     .order('slot_index', { ascending: true })
-  //     .order('updated_at', { ascending: false });
-  //
-  //   if (error) throw error;
-  //   return (data || []).map((session: any) => ({
-  //     ...session,
-  //     user_name: session.user_profiles?.full_name || 'Unknown',
-  //   }));
-  // },
-  // Old End
-
-  // New Start: only return *student* sessions (teacher view wants to review student work)
   async getStudentSessions(lessonId: string): Promise<(CanvasSession & { user_name: string })[]> {
-    const { data, error } = await supabase
+    const { data: sessions, error } = await supabase
       .from('canvas_sessions')
-      .select(`
-        *,
-        user_profiles!inner(full_name)
-      `)
+      .select('*')
       .eq('lesson_id', lessonId)
-      .eq('canvas_type', 'student') // filter to student boards
+      .eq('canvas_type', 'student')
       .order('slot_index', { ascending: true })
       .order('updated_at', { ascending: false });
 
     if (error) throw error;
-    return (data || []).map((session: any) => ({
-      ...session,
-      user_name: session.user_profiles?.full_name || 'Unknown',
+
+    if (!sessions || sessions.length === 0) return [];
+
+    const userIds = Array.from(new Set(sessions.map((s: any) => s.user_id).filter(Boolean)));
+    let namesById: Record<string, string> = {};
+
+    if (userIds.length > 0) {
+      const { data: profiles, error: profErr } = await supabase
+        .from('user_profiles')
+        .select('id, full_name')
+        .in('id', userIds);
+
+      if (profErr) {
+        console.warn('[canvasService] profiles fetch failed in getStudentSessions:', profErr.message);
+      } else if (profiles) {
+        namesById = profiles.reduce((acc: Record<string, string>, p: any) => {
+          acc[p.id] = p.full_name || 'Unknown';
+          return acc;
+        }, {});
+      }
+    }
+
+    return (sessions as any[]).map((s) => ({
+      ...s,
+      user_name: namesById[s.user_id] || 'Unknown',
     }));
   },
   // New End
@@ -306,19 +367,19 @@ export const offlineCanvasService = {
 
   async syncPendingData(): Promise<void> {
     const db = await this.openDB();
-  
+
     // Read all strokes and filter those needing sync (boolean true or numeric 1)
     const tx = db.transaction(['strokes'], 'readwrite');
     const store = tx.objectStore('strokes');
-  
+
     const all: any[] = await new Promise((resolve, reject) => {
       const req = store.getAll();
       req.onerror = () => reject(req.error);
       req.onsuccess = () => resolve(req.result || []);
     });
-  
+
     const pending = all.filter((s) => s.needs_sync === true || s.needs_sync === 1);
-  
+
     for (const stroke of pending) {
       try {
         const { localId, needs_sync, ...clean } = stroke;
@@ -335,14 +396,7 @@ export const offlineCanvasService = {
       }
     }
   },
-  
 };
-
-
-
-
-
-
 
 // canvasService.ts (ADD THESE TYPES + FUNCTIONS)
 
@@ -362,6 +416,7 @@ const TEACHER_TYPE_DB: CanvasType = 'teacher_example';
 
 // NEW: get teacher session for a slot (pick the most recently updated one)
 async function getLatestTeacherSessionForSlot(lessonId: string, slotIndex: number): Promise<CanvasSession | null> {
+  console.log('[resolver] getLatestTeacherSessionForSlot', { lessonId, slotIndex, type: TEACHER_TYPE_DB });
   const { data, error } = await supabase
     .from('canvas_sessions')
     .select('*')
@@ -372,18 +427,22 @@ async function getLatestTeacherSessionForSlot(lessonId: string, slotIndex: numbe
     .limit(1)
     .maybeSingle();
 
-  if (error && (error as any).code !== 'PGRST116') throw error;
+  if (error && (error as any).code !== 'PGRST116') {
+    console.error('[resolver] latest teacher session error:', error);
+    throw error;
+  }
   return (data as CanvasSession) ?? null;
 }
 
 // NEW: get all student sessions for a given slot including user names
-async function getAllStudentSessionsForSlot(lessonId: string, slotIndex: number): Promise<(CanvasSession & { user_name: string })[]> {
-  const { data, error } = await supabase
+async function getAllStudentSessionsForSlot(
+  lessonId: string,
+  slotIndex: number
+): Promise<(CanvasSession & { user_name: string })[]> {
+  // 1) Fetch the student sessions for that slot
+  const { data: sessions, error } = await supabase
     .from('canvas_sessions')
-    .select(`
-      *,
-      user_profiles!inner(full_name)
-    `)
+    .select('*')
     .eq('lesson_id', lessonId)
     .eq('slot_index', slotIndex)
     .eq('canvas_type', 'student')
@@ -391,10 +450,38 @@ async function getAllStudentSessionsForSlot(lessonId: string, slotIndex: number)
 
   if (error) throw error;
 
-  return (data || []).map((s: any) => ({
+  if (!sessions || sessions.length === 0) {
+    console.log('[canvasService] No student sessions for slot', { lessonId, slotIndex });
+    return [];
+  }
+
+  // 2) Fetch the display names in one go
+  const userIds = Array.from(new Set(sessions.map((s: any) => s.user_id).filter(Boolean)));
+  let namesById: Record<string, string> = {};
+
+  if (userIds.length > 0) {
+    const { data: profiles, error: profErr } = await supabase
+      .from('user_profiles')
+      .select('id, full_name')
+      .in('id', userIds);
+
+    if (profErr) {
+      console.warn('[canvasService] profiles lookup failed, will default names to Unknown:', profErr.message);
+    } else if (profiles) {
+      namesById = profiles.reduce((acc: Record<string, string>, p: any) => {
+        acc[p.id] = p.full_name || 'Unknown';
+        return acc;
+      }, {});
+    }
+  }
+
+  const result = (sessions as any[]).map((s) => ({
     ...s,
-    user_name: s.user_profiles?.full_name || 'Unknown',
+    user_name: namesById[s.user_id] || 'Unknown',
   }));
+
+  console.log('[canvasService] Student sessions resolved for slot', { lessonId, slotIndex, count: result.length });
+  return result;
 }
 
 /**
@@ -418,6 +505,7 @@ export async function resolveCanvasViewForUser(
   }
 ): Promise<ResolvedCanvasView | null> {
   const { lessonId, slotIndex, canvasType, viewerUserId, viewerRole } = params;
+  console.log('[resolver] resolveCanvasViewForUser called with', params);
 
   // STUDENT canvas slot
   if (canvasType === 'student') {
