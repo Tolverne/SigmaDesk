@@ -5,10 +5,27 @@ import { courseService } from '../services/courseService';
 import { supabase } from '../utils/supabase';
 import { Lesson } from '../types/course.types';
 import Breadcrumb from '../components/Breadcrumb';
-import CanvasWorkspace from '../components/canvas/CanvasWorkspace';
+
+// Old Start: We previously rendered CanvasWorkspace directly for every \workskip
+// import CanvasWorkspace from '../components/canvas/CanvasWorkspace';
+// Old End
+
+// New Start: Swap to CanvasSlot which decides between single canvas vs teacher carousel,
+// and sets read/write vs read-only by user role + canvas_type.
+import CanvasSlot from '../components/canvas/CanvasSlot';
+// New End
+
 import { ChevronLeft, ChevronRight, CheckCircle } from 'lucide-react';
 
-const WORKSKIP_REGEX = /\\workskip\b/g; // matches \workskip markers in LaTeX
+// Old Start: Only supported \workskip (student canvas) markers
+// const WORKSKIP_REGEX = /\\workskip\b/g; // matches \workskip markers in LaTeX
+// Old End
+
+// New Start: Support both \workskip (student) and \bigskip (teacher)
+// Also accept double-backslashes (\\workskip / \\bigskip) to be forgiving with LaTeX.
+// We treat both as placeholder markers and increment the slot index in order.
+const CANVAS_MARKER_REGEX = /\\\\?(workskip|bigskip)\b/g;
+// New End
 
 function escapeHtml(s: string) {
   return s
@@ -17,6 +34,8 @@ function escapeHtml(s: string) {
     .replace(/>/g, '&gt;');
 }
 
+// Old Start: Splitter only emitted { type: 'text' | 'canvas' } with index for \workskip
+/*
 function splitByWorkskip(latex: string): Array<{ type: 'text' | 'canvas'; content?: string; index?: number }> {
   const parts: Array<{ type: 'text' | 'canvas'; content?: string; index?: number }> = [];
   if (!latex || !latex.length) return [{ type: 'text', content: '' }];
@@ -40,6 +59,44 @@ function splitByWorkskip(latex: string): Array<{ type: 'text' | 'canvas'; conten
 
   return parts;
 }
+*/
+// Old End
+
+// New Start: Splitter emits canvas segments with both slotIndex and canvasType:
+// - 'workskip'  -> canvasType = 'student'
+// - 'bigskip'   -> canvasType = 'teacher_example' (aligns with DB enum you’re using)
+type Segment =
+  | { type: 'text'; content: string }
+  | { type: 'canvas'; index: number; canvasType: 'student' | 'teacher_example' };
+
+function splitByCanvasMarkers(latex: string): Segment[] {
+  const parts: Segment[] = [];
+  if (!latex || !latex.length) return [{ type: 'text', content: '' }];
+
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let slot = 0;
+
+  while ((match = CANVAS_MARKER_REGEX.exec(latex)) !== null) {
+    const textChunk = latex.slice(lastIndex, match.index);
+    if (textChunk) parts.push({ type: 'text', content: textChunk });
+
+    const tag = (match[1] as 'workskip' | 'bigskip');
+    const canvasType = tag === 'workskip' ? 'student' : 'teacher_example';
+
+    parts.push({ type: 'canvas', index: slot, canvasType });
+    slot += 1;
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  const tail = latex.slice(lastIndex);
+  if (tail) parts.push({ type: 'text', content: tail });
+
+  if (parts.length === 0) return [{ type: 'text', content: latex }];
+  return parts;
+}
+// New End
 
 const LessonPage: React.FC = () => {
   const { courseId, lessonId } = useParams<{ courseId: string; lessonId: string }>();
@@ -159,8 +216,13 @@ const LessonPage: React.FC = () => {
     return <div className="max-w-4xl mx-auto px-4 py-8">Lesson not found</div>;
   }
 
-  // Split LaTeX on \workskip markers
-  const segments = splitByWorkskip(String((lesson as any).content_latex || ''));
+  // Old Start: Previously split by \workskip only
+  // const segments = splitByWorkskip(String((lesson as any).content_latex || ''));
+  // Old End
+
+  // New Start: Split by both \workskip (student) and \bigskip (teacher)
+  const segments = splitByCanvasMarkers(String((lesson as any).content_latex || ''));
+  // New End
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
@@ -213,24 +275,59 @@ const LessonPage: React.FC = () => {
             ) : (
               <div key={`c-${seg.index}`} className="bg-white rounded-lg">
                 <h3 className="text-md font-semibold text-gray-700 mb-2">
-                  Working Area {Number(seg.index) + 1}
+                  {/* Old Start: Generic heading */}
+                  {/* Working Area {Number(seg.index) + 1} */}
+                  {/* Old End */}
+
+                  {/* New Start: Show type-aware heading for clarity */}
+                  {seg.canvasType === 'student'
+                    ? `Student Working Area ${Number(seg.index) + 1}`
+                    : `Teacher Board ${Number(seg.index) + 1}`}
+                  {/* New End */}
                 </h3>
+
+                {/* Old Start: Direct CanvasWorkspace (always editable for current user) */}
+                {/*
                 <CanvasWorkspace
                   lessonId={lesson.id}
                   slotIndex={Number(seg.index)}
                   className="mb-2"
                 />
+                */}
+                {/* Old End */}
+
+                {/* New Start: CanvasSlot chooses single vs carousel & read/write vs read-only */}
+                <CanvasSlot
+                  lessonId={lesson.id}
+                  slotIndex={Number(seg.index)}
+                  canvasType={seg.canvasType}
+                  className="mb-2"
+                />
+                {/* New End */}
               </div>
             )
           )}
 
-          {/* If no \workskip appeared and you still want a single default canvas, uncomment below:
+          {/* Old Start: Optional default canvas when no markers */}
+          {/*
           {segments.every(s => s.type === 'text') && (
             <div className="bg-white rounded-lg">
               <h3 className="text-md font-semibold text-gray-700 mb-2">Working Area</h3>
               <CanvasWorkspace lessonId={lesson.id} slotIndex={0} className="mb-2" />
             </div>
-          )} */}
+          )}
+          */}
+          {/* Old End */}
+
+          {/* New Start: Optional default; if you still want one when no markers,
+              use CanvasSlot with canvasType="student" so role logic remains consistent. */}
+          {segments.every(s => s.type === 'text') && (
+            <div className="bg-white rounded-lg">
+              <h3 className="text-md font-semibold text-gray-700 mb-2">Working Area</h3>
+              <CanvasSlot lessonId={lesson.id} slotIndex={0} canvasType="student" className="mb-2" />
+            </div>
+          )}
+          {/* New End */}
         </div>
 
         {/* Navigation */}

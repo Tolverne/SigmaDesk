@@ -1,4 +1,4 @@
-export interface CanvasSession {
+  export interface CanvasSession {
     id: string;
     lesson_id: string;
     user_id: string;
@@ -52,6 +52,9 @@ export interface CanvasSession {
     visibleStrokes: CanvasStroke[];
   }
   
+  export type CanvasType = 'student' | 'teacher_example';
+
+
   export const STUDENT_COLORS = [
     '#000000',
     '#0066CC',
