@@ -556,14 +556,73 @@ export async function getTeacherExampleSessionIds(lessonId: string, slotIndex: n
 
 
 export async function getMergedStrokesForSessions(sessionIds: string[]): Promise<CanvasStroke[]> {
-  if (!sessionIds.length) return [];
+  if (!sessionIds?.length) return [];
+
   const { data, error } = await supabase
     .from('canvas_strokes')
-    .select('id, session_id, stroke_order, stroke_data, created_at')
+    .select('id, session_id, stroke_data, tool_type, stroke_color, stroke_width, timestamp_ms, stroke_order, created_at')
     .in('session_id', sessionIds)
-    .order('stroke_order', { ascending: true })
-    .order('created_at', { ascending: true });
+    // Order helps, but we still normalize below
+    .order('timestamp_ms', { ascending: true, nullsFirst: true })
+    .order('stroke_order', { ascending: true, nullsFirst: true })
+    .order('created_at', { ascending: true, nullsFirst: true });
 
   if (error) throw new Error(error.message);
-  return (data ?? []) as CanvasStroke[];
+
+  // Parse + coerce to CanvasStroke while computing a usable numeric time
+  type Raw = {
+    id: string;
+    session_id: string;
+    stroke_data: any; // JSON or stringified JSON
+    tool_type: string;
+    stroke_color: string;
+    stroke_width: number;
+    timestamp_ms: number | null;
+    stroke_order: number | null;
+    created_at: string | null;
+  };
+
+  const rows = (data ?? []) as Raw[];
+
+  // First pass: compute a fallback numeric time for each row
+  const EST_MS_PER_STROKE = 40; // ~25 fps spacing if timestamps missing
+  let syntheticCounter = 0;
+
+  const withTime = rows.map((r, idx) => {
+    // Parse stroke_data if it is stringified
+    let sd: any = r.stroke_data;
+    if (sd && typeof sd === 'string') {
+      try { sd = JSON.parse(sd); } catch { /* leave as-is */ }
+    }
+
+    // Decide a time basis:
+    const created = r.created_at ? Date.parse(r.created_at) : NaN;
+    let t =
+      (typeof r.timestamp_ms === 'number' && !isNaN(r.timestamp_ms) ? r.timestamp_ms : null) ??
+      (typeof r.stroke_order === 'number' && !isNaN(r.stroke_order) ? r.stroke_order * EST_MS_PER_STROKE : null) ??
+      (!isNaN(created) ? created : null);
+
+    // If still null → synthesize strictly increasing
+    if (t === null) t = (syntheticCounter++) * EST_MS_PER_STROKE;
+
+    return {
+      id: r.id,
+      session_id: r.session_id,
+      stroke_data: sd,               // expect { d: 'M...' } etc.
+      tool_type: r.tool_type,
+      stroke_color: r.stroke_color,
+      stroke_width: r.stroke_width,
+      timestamp_ms: t,               // temporary absolute value
+    } as CanvasStroke;
+  });
+
+  // Normalize to start at 0 and sort
+  const minT = withTime.reduce((min, s) => Math.min(min, s.timestamp_ms || 0), Number.POSITIVE_INFINITY);
+  const zero = Number.isFinite(minT) ? minT : 0;
+
+  const normalized = withTime
+    .map(s => ({ ...s, timestamp_ms: Math.max(0, (s.timestamp_ms || 0) - zero) }))
+    .sort((a, b) => (a.timestamp_ms || 0) - (b.timestamp_ms || 0));
+
+  return normalized;
 }
