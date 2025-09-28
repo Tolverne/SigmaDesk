@@ -5,7 +5,12 @@ import { supabase } from '../utils/supabase';
 
 // New Start: include CanvasType so we can pass the canvas_type to the DB
 import type { CanvasSession, CanvasStroke, CanvasType } from '../types/canvas.types';
+
+
 // New End
+
+
+
 
 export const canvasService = {
   // Create or fetch a session for a specific slot in the lesson
@@ -533,4 +538,32 @@ export async function resolveCanvasViewForUser(
     if (!session) return null; // nothing to show yet
     return { kind: 'single', session, readOnly: true };
   }
+}
+
+
+export async function getTeacherExampleSessionIds(lessonId: string, slotIndex: number): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('canvas_sessions')
+    .select('id')
+    .eq('lesson_id', lessonId)
+    .eq('slot_index', slotIndex)
+    .eq('canvas_type', 'teacher_example')
+    .order('updated_at', { ascending: true });
+
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((r: any) => r.id as string);
+}
+
+
+export async function getMergedStrokesForSessions(sessionIds: string[]): Promise<CanvasStroke[]> {
+  if (!sessionIds.length) return [];
+  const { data, error } = await supabase
+    .from('canvas_strokes')
+    .select('id, session_id, stroke_order, stroke_data, created_at')
+    .in('session_id', sessionIds)
+    .order('stroke_order', { ascending: true })
+    .order('created_at', { ascending: true });
+
+  if (error) throw new Error(error.message);
+  return (data ?? []) as CanvasStroke[];
 }
