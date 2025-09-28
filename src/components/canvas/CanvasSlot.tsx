@@ -11,7 +11,11 @@ import CanvasWorkspace from './CanvasWorkspace';
 import StudentCanvasCarousel from './StudentCanvasCarousel';
 import { supabase } from '../../utils/supabase';
 
-// New Start (imports for merged playback)
+// Old Start
+// (previously we only used CanvasWorkspace overlays for student@teacher_example)
+// Old End
+
+// New Start: merged snapshot playback helpers
 import CanvasPlayback from './CanvasPlayback';
 import { getTeacherExampleSessionIds } from '../../services/canvasService';
 // New End
@@ -42,7 +46,7 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
   // Role resolution (AuthContext preferred; fallback to user_profiles)
   const [viewerRole, setViewerRole] = useState<ViewerRole>('student');
 
-  // New Start: store *all* teacher-example sessions for student merged playback
+  // New Start: list of ALL teacher_example sessions (for student snapshot)
   const [teacherSessionIds, setTeacherSessionIds] = useState<string[] | null>(null);
   const [teacherSessionsLoading, setTeacherSessionsLoading] = useState<boolean>(false);
   // New End
@@ -116,7 +120,7 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
           canvasType,       // 'student' | 'teacher_example'
           viewerUserId: uid,
           viewerRole,       // 'student' | 'teacher'
-          // guard: don’t create a student session when viewing teacher_example
+          // Guard: don’t create a student session when viewing teacher_example
           createIfMissing: !(viewerRole === 'student' && canvasType === 'teacher_example'),
         } as any);
 
@@ -143,48 +147,7 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
     };
   }, [lessonId, slotIndex, canvasType, viewerUserId, viewerRole]);
 
-  // Old Start: Direct Supabase query for teacher sessions (overlay approach)
-  /*
-  useEffect(() => {
-    let cancelled = false;
-
-    const fetchAllTeacherSessions = async () => {
-      if (viewerRole !== 'student' || canvasType !== 'teacher_example') {
-        setTeacherSessionIds(null);
-        return;
-      }
-      try {
-        setTeacherSessionsLoading(true);
-        const { data, error } = await supabase
-          .from('canvas_sessions')
-          .select('id, canvas_type, lesson_id, slot_index, user_id, updated_at')
-          .eq('lesson_id', lessonId)
-          .eq('slot_index', slotIndex)
-          .eq('canvas_type', 'teacher_example')
-          .order('updated_at', { ascending: true });
-
-        if (cancelled) return;
-
-        if (error) {
-          console.warn('[CanvasSlot] Fetch teacher sessions failed:', error.message);
-          setTeacherSessionIds(null);
-          return;
-        }
-
-        const ids = (data || []).map((s: any) => s.id as string);
-        setTeacherSessionIds(ids.length ? ids : null);
-      } finally {
-        if (!cancelled) setTeacherSessionsLoading(false);
-      }
-    };
-
-    fetchAllTeacherSessions();
-    return () => { cancelled = true; };
-  }, [viewerRole, canvasType, lessonId, slotIndex]);
-  */
-  // Old End
-
-  // New Start: Use service helper to get *all* teacher_example session IDs for merged playback
+  // New Start: For student@teacher_example, fetch ALL teacher session IDs (for snapshot)
   useEffect(() => {
     let cancelled = false;
 
@@ -265,37 +228,8 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
     );
   }
 
-  // Old Start: Overlay multiple CanvasWorkspace instances
+  // Old Start: student@teacher_example used overlays / playback timeline
   /*
-  if (viewerRole === 'student' && isTeacherExampleView) {
-    if (teacherSessionsLoading) {
-      return (
-        <div className={className}>
-          <div className="text-sm text-gray-500 py-2">Loading teacher board…</div>
-        </div>
-      );
-    }
-    if (teacherSessionIds && teacherSessionIds.length) {
-      return (
-        <div className={`${className || ''} relative pointer-events-none`}>
-          {teacherSessionIds.map((id, idx) => (
-            <div key={id} className={idx === 0 ? '' : 'absolute inset-0'}>
-              <CanvasWorkspace sessionId={id} isReadOnly={true} />
-            </div>
-          ))}
-        </div>
-      );
-    }
-    return (
-      <div className={`${className || ''} pointer-events-none`}>
-        <CanvasWorkspace sessionId={sessionId} isReadOnly={true} />
-      </div>
-    );
-  }
-  */
-  // Old End
-
-  // New Start: Student @ teacher_example → single merged playback
   if (viewerRole === 'student' && isTeacherExampleView) {
     if (teacherSessionsLoading) {
       return (
@@ -316,13 +250,53 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
       );
     }
 
-    // Fallback to the resolver's single teacher session if no list was found
     if (sessionId) {
       return (
         <CanvasPlayback
           sessionIds={[sessionId]}
           autoplay
           speed={1}
+          className={`${className || ''} pointer-events-none`}
+        />
+      );
+    }
+
+    return (
+      <div className={className}>
+        <div className="text-sm text-gray-500 py-2">Nothing to show here yet.</div>
+      </div>
+    );
+  }
+  */
+  // Old End
+
+  // New Start: student@teacher_example → render a *snapshot* (final image only)
+  if (viewerRole === 'student' && isTeacherExampleView) {
+    if (teacherSessionsLoading) {
+      return (
+        <div className={className}>
+          <div className="text-sm text-gray-500 py-2">Loading teacher board…</div>
+        </div>
+      );
+    }
+
+    // Prefer merged snapshot from all teacher sessions
+    if (teacherSessionIds && teacherSessionIds.length) {
+      return (
+        <CanvasPlayback
+          sessionIds={teacherSessionIds}
+          snapshot
+          className={`${className || ''} pointer-events-none`}
+        />
+      );
+    }
+
+    // Fallback: snapshot from the resolver's single teacher session
+    if (sessionId) {
+      return (
+        <CanvasPlayback
+          sessionIds={[sessionId]}
+          snapshot
           className={`${className || ''} pointer-events-none`}
         />
       );

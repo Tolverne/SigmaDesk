@@ -25,6 +25,8 @@ type CanvasPlaybackProps =
       className?: string;
       autoplay?: boolean;
       speed?: number;
+      /** New: render a static final image (no controls, no timeline) */
+      snapshot?: boolean;
     }
   | {
       /** New: list of sessionIds to merge on the fly */
@@ -35,6 +37,8 @@ type CanvasPlaybackProps =
       className?: string;
       autoplay?: boolean;
       speed?: number;
+      /** New: render a static final image (no controls, no timeline) */
+      snapshot?: boolean;
     };
 // New End
 
@@ -61,6 +65,7 @@ const CanvasPlayback: React.FC<CanvasPlaybackProps> = ({
   className = '',
   autoplay = false,
   speed = 1,
+  snapshot = false,
   // New End
 }) => {
   // New Start: a single internal source of truth for the strokes we’ll render
@@ -96,8 +101,14 @@ const CanvasPlayback: React.FC<CanvasPlaybackProps> = ({
           // Ensure sorted (service may already do this)
           const ordered = [...(merged ?? [])].sort((a, b) => {
             // Prefer explicit timestamp_ms, else fallback to stroke_order / created_at if present
-            const ta = (a as any).timestamp_ms ?? (a as any).stroke_order ?? new Date((a as any).created_at ?? 0).getTime();
-            const tb = (b as any).timestamp_ms ?? (b as any).stroke_order ?? new Date((b as any).created_at ?? 0).getTime();
+            const ta =
+              (a as any).timestamp_ms ??
+              (a as any).stroke_order ??
+              new Date((a as any).created_at ?? 0).getTime();
+            const tb =
+              (b as any).timestamp_ms ??
+              (b as any).stroke_order ??
+              new Date((b as any).created_at ?? 0).getTime();
             return ta - tb;
           });
 
@@ -122,7 +133,9 @@ const CanvasPlayback: React.FC<CanvasPlaybackProps> = ({
     };
 
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [sessionIds, strokes]);
   // New End
 
@@ -148,17 +161,21 @@ const CanvasPlayback: React.FC<CanvasPlaybackProps> = ({
       }));
       return;
     }
-    const totalDuration = Math.max(...dataStrokes.map((s) => s.timestamp_ms || 0));
+    let totalDuration = Math.max(...dataStrokes.map((s) => s.timestamp_ms || 0));
+    // Fallback if timestamps are missing or degenerate
+    if (!Number.isFinite(totalDuration) || totalDuration <= 0) {
+      totalDuration = Math.max(0, (dataStrokes.length - 1) * 40); // ~25fps spacing
+    }
     setPlaybackState((p) => ({
       ...p,
       totalDuration,
       currentTime: 0,
-      visibleStrokes: [],
-      isPlaying: autoplay ? true : false,
+      visibleStrokes: snapshot ? dataStrokes : [], // in snapshot mode, we'll render all
+      isPlaying: snapshot ? false : !!autoplay,
       playbackSpeed: speed || p.playbackSpeed || 1,
     }));
     // New End
-  }, [dataStrokes, autoplay, speed]);
+  }, [dataStrokes, autoplay, speed, snapshot]);
 
   // Keep speed in sync if prop changes
   useEffect(() => {
@@ -167,6 +184,9 @@ const CanvasPlayback: React.FC<CanvasPlaybackProps> = ({
 
   const tick = useCallback(
     (t: number) => {
+      // If we're in snapshot mode, no ticking/animation is needed.
+      if (snapshot) return;
+
       // FIX: handle null baseline explicitly
       const baseline = lastTimeRef.current === null ? t : lastTimeRef.current;
       const delta = (t - baseline) * (playbackState.playbackSpeed || 1);
@@ -192,11 +212,20 @@ const CanvasPlayback: React.FC<CanvasPlaybackProps> = ({
     // [playbackState.isPlaying, playbackState.playbackSpeed, strokes]
     // Old End
     // New Start
-    [playbackState.isPlaying, playbackState.playbackSpeed, dataStrokes]
+    [playbackState.isPlaying, playbackState.playbackSpeed, dataStrokes, snapshot]
     // New End
   );
 
   useEffect(() => {
+    if (snapshot) {
+      // No animation loop in snapshot mode
+      if (animationRef.current !== null) {
+        cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
+      }
+      return;
+    }
+
     if (playbackState.isPlaying) {
       // FIX: set to null, not undefined
       lastTimeRef.current = null;
@@ -208,12 +237,12 @@ const CanvasPlayback: React.FC<CanvasPlaybackProps> = ({
         }
       };
     }
-  }, [playbackState.isPlaying, tick]);
+  }, [playbackState.isPlaying, tick, snapshot]);
 
   const play = () => setPlaybackState((p) => ({ ...p, isPlaying: true }));
   const pause = () => setPlaybackState((p) => ({ ...p, isPlaying: false }));
   const reset = () =>
-    setPlaybackState((p) => ({ ...p, isPlaying: false, currentTime: 0, visibleStrokes: [] }));
+    setPlaybackState((p) => ({ ...p, isPlaying: false, currentTime: 0, visibleStrokes: snapshot ? dataStrokes : [] }));
   const skipBack = () =>
     setPlaybackState((p) => ({ ...p, currentTime: Math.max(0, p.currentTime - 2000) }));
   const skipForward = () =>
@@ -239,64 +268,75 @@ const CanvasPlayback: React.FC<CanvasPlaybackProps> = ({
   }
   // New End
 
+  // New Start: choose which strokes to render (all for snapshot, progressive for playback)
+  const strokesToRender = snapshot ? dataStrokes : playbackState.visibleStrokes;
+  // New End
+
   return (
     <div className={`bg-white rounded-lg shadow ${className}`}>
       {/* Controls */}
-      <div className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-t-lg">
-        <div className="flex items-center space-x-2">
-          {!playbackState.isPlaying ? (
+      {/* Old Start: controls always visible */}
+      {/* <div className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-t-lg"> ... </div> */}
+      {/* Old End */}
+      {/* New Start: hide controls in snapshot mode */}
+      {!snapshot && (
+        <div className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-t-lg">
+          <div className="flex items-center space-x-2">
+            {!playbackState.isPlaying ? (
+              <button
+                onClick={play}
+                className="px-3 py-2 rounded-md bg-sigma-blue text-white flex items-center space-x-2"
+              >
+                <Play className="w-4 h-4" />
+                <span>Play</span>
+              </button>
+            ) : (
+              <button
+                onClick={pause}
+                className="px-3 py-2 rounded-md bg-gray-700 text-white flex items-center space-x-2"
+              >
+                <Pause className="w-4 h-4" />
+                <span>Pause</span>
+              </button>
+            )}
+
             <button
-              onClick={play}
-              className="px-3 py-2 rounded-md bg-sigma-blue text-white flex items-center space-x-2"
+              onClick={reset}
+              className="px-3 py-2 rounded-md bg-white text-gray-700 border flex items-center space-x-2"
             >
-              <Play className="w-4 h-4" />
-              <span>Play</span>
+              <RotateCcw className="w-4 h-4" />
+              <span>Reset</span>
             </button>
-          ) : (
+
             <button
-              onClick={pause}
-              className="px-3 py-2 rounded-md bg-gray-700 text-white flex items-center space-x-2"
+              onClick={skipBack}
+              className="px-3 py-2 rounded-md bg-white text-gray-700 border flex items-center space-x-2"
             >
-              <Pause className="w-4 h-4" />
-              <span>Pause</span>
+              <SkipBack className="w-4 h-4" />
+              <span>-2s</span>
             </button>
-          )}
 
-          <button
-            onClick={reset}
-            className="px-3 py-2 rounded-md bg-white text-gray-700 border flex items-center space-x-2"
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span>Reset</span>
-          </button>
+            <button
+              onClick={skipForward}
+              className="px-3 py-2 rounded-md bg-white text-gray-700 border flex items-center space-x-2"
+            >
+              <SkipForward className="w-4 h-4" />
+              <span>+2s</span>
+            </button>
+          </div>
 
-          <button
-            onClick={skipBack}
-            className="px-3 py-2 rounded-md bg-white text-gray-700 border flex items-center space-x-2"
-          >
-            <SkipBack className="w-4 h-4" />
-            <span>-2s</span>
-          </button>
-
-          <button
-            onClick={skipForward}
-            className="px-3 py-2 rounded-md bg-white text-gray-700 border flex items-center space-x-2"
-          >
-            <SkipForward className="w-4 h-4" />
-            <span>+2s</span>
-          </button>
+          <div className="text-xs text-gray-600">
+            {formatTime(playbackState.currentTime)} / {formatTime(playbackState.totalDuration)}
+          </div>
         </div>
-
-        <div className="text-xs text-gray-600">
-          {formatTime(playbackState.currentTime)} / {formatTime(playbackState.totalDuration)}
-        </div>
-      </div>
+      )}
+      {/* New End */}
 
       {/* Playback canvas */}
-      <div className="p-3">
+      <div className={`p-3 ${snapshot ? '' : ''}`}>
         <div className="border rounded-lg overflow-hidden bg-gray-50">
           <svg width={width} height={height} className="bg-white">
-            {playbackState.visibleStrokes.map((s) => (
+            {strokesToRender.map((s) => (
               <path
                 key={s.id}
                 d={s.stroke_data.d}
@@ -306,6 +346,8 @@ const CanvasPlayback: React.FC<CanvasPlaybackProps> = ({
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 style={{
+                  // Note: CSS mix-blend-mode doesn't support 'destination-out'; this mirrors
+                  // prior behavior. If you truly need erasing in SVG, consider masks/clipPaths.
                   mixBlendMode: s.tool_type === 'eraser' ? ('destination-out' as any) : 'normal',
                 }}
               />
@@ -321,10 +363,13 @@ const CanvasPlayback: React.FC<CanvasPlaybackProps> = ({
           {/* New Start */}
           <span>Strokes: {dataStrokes.length}</span>
           {/* New End */}
-          <span>Visible: {playbackState.visibleStrokes.length}</span>
+          <span>
+            Visible: {snapshot ? dataStrokes.length : playbackState.visibleStrokes.length}
+          </span>
           <span>Duration: {formatTime(playbackState.totalDuration)}</span>
           {/* New Start: show mode */}
           {sessionIds && <span>Merged from {sessionIds.length} sessions</span>}
+          {snapshot && <span>Snapshot</span>}
           {/* New End */}
         </div>
       </div>
