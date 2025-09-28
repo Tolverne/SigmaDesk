@@ -24,6 +24,7 @@ const NotFoundPage: React.FC = () => {
           doesn’t exist or may have been moved.
         </p>
 
+
         <div className="flex flex-wrap justify-center gap-4">
           <button
             onClick={() => navigate('/')}

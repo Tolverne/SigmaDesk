@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../utils/supabase';
 
+
 const DebugPage: React.FC = () => {
   const [debugInfo, setDebugInfo] = useState<any>({});
   
@@ -52,6 +53,8 @@ const DebugPage: React.FC = () => {
         {JSON.stringify(debugInfo, null, 2)}
       </pre>
       
+
+
       <div className="mt-4 space-y-2">
         <button 
           onClick={async () => {

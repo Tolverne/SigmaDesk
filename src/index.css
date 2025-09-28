@@ -17,3 +17,9 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+.video iframe { width: 100%; aspect-ratio: 16 / 9; display: block; }
+img { max-width: 100%; height: auto; }
+.questions { display: grid; gap: 1rem; }
+.question { padding: .75rem; border-radius: .75rem; box-shadow: 0 0 0 1px rgba(0,0,0,.08); }
+.parts { padding-left: 1.25rem; }
