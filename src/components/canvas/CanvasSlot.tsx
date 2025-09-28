@@ -1,8 +1,12 @@
 /* eslint-disable no-console */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import type { CanvasSession, CanvasType } from '../../types/canvas.types';
-import { resolveCanvasViewForUser, ViewerRole, ResolvedCanvasView } from '../../services/canvasService';
+import type { CanvasType } from '../../types/canvas.types';
+import {
+  resolveCanvasViewForUser,
+  ViewerRole,
+  ResolvedCanvasView,
+} from '../../services/canvasService';
 import CanvasWorkspace from './CanvasWorkspace';
 import StudentCanvasCarousel from './StudentCanvasCarousel';
 import { supabase } from '../../utils/supabase';
@@ -11,12 +15,17 @@ type CanvasSlotProps = {
   className?: string;
   lessonId: string;
   slotIndex: number;
-  canvasType: CanvasType; // 'student' | 'teacher' | 'teacher_example'
+  canvasType: CanvasType; // 'student' | 'teacher_example'
 };
 
 const roleFromString = (s?: string): ViewerRole => (s === 'teacher' ? 'teacher' : 'student');
 
-const CanvasSlot: React.FC<CanvasSlotProps> = ({ className, lessonId, slotIndex, canvasType }) => {
+const CanvasSlot: React.FC<CanvasSlotProps> = ({
+  className,
+  lessonId,
+  slotIndex,
+  canvasType,
+}) => {
   const { user } = useAuth();
 
   const [view, setView] = useState<ResolvedCanvasView | null>(null);
@@ -25,43 +34,46 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({ className, lessonId, slotIndex,
 
   const viewerUserId = user?.id || '';
 
-  // Resolve viewer role (prefer AuthContext if you expose it; otherwise pull from profiles)
+  // Resolve viewer role (prefer AuthContext if you expose it; otherwise fetch from user_profiles)
   const [viewerRole, setViewerRole] = useState<ViewerRole>('student');
 
   useEffect(() => {
     let cancelled = false;
 
-    const go = async () => {
+    const resolveRole = async () => {
       try {
         setLoading(true);
         setErrMsg(null);
 
         if (!viewerUserId) {
-          console.warn('[CanvasSlot] No user session yet → read-only context; still attempting resolve');
-          // We still need a role to decide behavior; defaulting to student as a safe default:
+          console.warn('[CanvasSlot] No user session yet → defaulting role to student');
+          setViewerRole('student');
+          return;
+        }
+
+        const { data: prof, error } = await supabase
+          .from('user_profiles')
+          .select('role')
+          .eq('id', viewerUserId)
+          .maybeSingle();
+
+        if (cancelled) return;
+
+        if (error) {
+          console.warn('[CanvasSlot] fetch role failed, defaulting student:', error.message);
           setViewerRole('student');
         } else {
-          // Try to fetch role from user_profiles (if your AuthContext doesn’t provide it)
-          const { data: prof, error } = await supabase
-            .from('user_profiles')
-            .select('role')
-            .eq('id', viewerUserId)
-            .maybeSingle();
-
-          if (error) {
-            console.warn('[CanvasSlot] fetch role failed, defaulting student:', error.message);
-            setViewerRole('student');
-          } else {
-            setViewerRole(roleFromString(prof?.role));
-          }
+          setViewerRole(roleFromString(prof?.role));
         }
       } finally {
-        // This effect only sets viewerRole; resolution happens in a separate effect below.
+        if (!cancelled) setLoading(false);
       }
     };
 
-    go();
-    return () => { cancelled = true; };
+    resolveRole();
+    return () => {
+      cancelled = true;
+    };
   }, [viewerUserId]);
 
   // Resolve what to render for this slot
@@ -78,15 +90,9 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({ className, lessonId, slotIndex,
           return;
         }
 
-        // We require a viewerUserId to create “own” sessions.
-        // If user is not present (viewerUserId empty), students/teachers won’t be able to edit anyway.
         const uid = viewerUserId || 'anonymous';
 
         console.log('[CanvasSlot] Resolving view →', {
-          lessonId, slotIndex, canvasType, viewerUserId: uid, viewerRole,
-        });
-
-        const v = await resolveCanvasViewForUser({
           lessonId,
           slotIndex,
           canvasType,
@@ -94,10 +100,21 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({ className, lessonId, slotIndex,
           viewerRole,
         });
 
+        // Prevent accidental creation of a new session when a *student* views a teacher_example board.
+        const v = await resolveCanvasViewForUser({
+          lessonId,
+          slotIndex,
+          canvasType,       // 'student' | 'teacher_example'
+          viewerUserId: uid,
+          viewerRole,       // 'student' | 'teacher'
+          // If service ignores this, it's harmless; otherwise it enforces the intended constraint:
+          createIfMissing: !(viewerRole === 'student' && canvasType === 'teacher_example'),
+        } as any);
+
         if (cancelled) return;
 
         // If there’s no teacher board yet for a teacher slot and the viewer is a student,
-        // resolver returns null → show a friendly message instead of spinner.
+        // resolver can return null → show a friendly message.
         if (!v) {
           console.log('[CanvasSlot] No resolved view (likely no teacher board yet).');
           setView(null);
@@ -113,13 +130,15 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({ className, lessonId, slotIndex,
       }
     };
 
-    // Only run when we have a role (otherwise we’d flip twice needlessly)
+    // Only run when we know the role, to avoid double-resolve flicker
     if (viewerRole) run();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [lessonId, slotIndex, canvasType, viewerUserId, viewerRole]);
 
-  // UI states
+  // -------- UI states --------
   if (loading) {
     return (
       <div className={className}>
@@ -145,18 +164,44 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({ className, lessonId, slotIndex,
     );
   }
 
-  if (view.kind === 'single') {
+  // Teacher review carousel (your existing behavior)
+  if (view.kind !== 'single') {
     return (
       <div className={className}>
-        <CanvasWorkspace sessionId={view.session.id} isReadOnly={view.readOnly} />
+        <StudentCanvasCarousel sessions={view.sessions} />
       </div>
     );
   }
 
-  // Carousel of student work for teachers
+  // --- Single-session case ---------------------------------------------------
+  // Enforce:
+  // - Student @ teacher_example => read-only AND load the *teacher's* session.
+  // - No accidental "new student session" for teacher_example.
+  const sessionId = view.session?.id;
+  const sessionOwnerId = view.session?.user_id;
+  const sessionType = (view.session as any)?.canvas_type as CanvasType | undefined;
+
+  const isTeacherExampleView =
+    canvasType === 'teacher_example' || sessionType === 'teacher_example';
+
+  // Force read-only if student looking at teacher_example
+  const enforcedReadOnly =
+    view.readOnly || (viewerRole === 'student' && isTeacherExampleView);
+
+  // Defensive logging if something unexpected slips through
+  if (viewerRole === 'student' && isTeacherExampleView && sessionOwnerId === viewerUserId) {
+    console.warn(
+      '[CanvasSlot] Student received own session for teacher_example. ' +
+        'Refusing to allow edits.'
+    );
+  }
+
   return (
     <div className={className}>
-      <StudentCanvasCarousel sessions={view.sessions} />
+      <CanvasWorkspace
+        sessionId={sessionId}
+        isReadOnly={!!enforcedReadOnly}
+      />
     </div>
   );
 };
