@@ -25,11 +25,11 @@ type CanvasPlaybackProps =
       className?: string;
       autoplay?: boolean;
       speed?: number;
-      /** New: render a static final image (no controls, no timeline) */
+      /** Render a static final image (no controls/timeline; uses HTML canvas) */
       snapshot?: boolean;
     }
   | {
-      /** New: list of sessionIds to merge on the fly */
+      /** Merge these sessionIds on the fly */
       sessionIds: string[];
       strokes?: never;
       width?: number;
@@ -37,7 +37,7 @@ type CanvasPlaybackProps =
       className?: string;
       autoplay?: boolean;
       speed?: number;
-      /** New: render a static final image (no controls, no timeline) */
+      /** Render a static final image (no controls/timeline; uses HTML canvas) */
       snapshot?: boolean;
     };
 // New End
@@ -68,7 +68,7 @@ const CanvasPlayback: React.FC<CanvasPlaybackProps> = ({
   snapshot = false,
   // New End
 }) => {
-  // New Start: a single internal source of truth for the strokes we’ll render
+  // New Start: single source of truth for stroke list
   const [dataStrokes, setDataStrokes] = useState<CanvasStroke[]>(strokes ?? []);
   const [loading, setLoading] = useState<boolean>(!!sessionIds && sessionIds.length > 0);
   const [loadErr, setLoadErr] = useState<string | null>(null);
@@ -86,7 +86,11 @@ const CanvasPlayback: React.FC<CanvasPlaybackProps> = ({
   const animationRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number | null>(null);
 
-  // New Start: load/merge strokes when sessionIds provided; otherwise use the prop strokes
+  // New Start: snapshot canvas ref (used only when snapshot === true)
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // New End
+
+  // New Start: load/merge strokes when sessionIds provided; else use prop strokes
   useEffect(() => {
     let cancelled = false;
 
@@ -98,9 +102,8 @@ const CanvasPlayback: React.FC<CanvasPlaybackProps> = ({
           const merged = await getMergedStrokesForSessions(sessionIds);
           if (cancelled) return;
 
-          // Ensure sorted (service may already do this)
+          // Ensure sorted (service should already do this, but be safe)
           const ordered = [...(merged ?? [])].sort((a, b) => {
-            // Prefer explicit timestamp_ms, else fallback to stroke_order / created_at if present
             const ta =
               (a as any).timestamp_ms ??
               (a as any).stroke_order ??
@@ -170,22 +173,22 @@ const CanvasPlayback: React.FC<CanvasPlaybackProps> = ({
       ...p,
       totalDuration,
       currentTime: 0,
-      visibleStrokes: snapshot ? dataStrokes : [], // in snapshot mode, we'll render all
+      visibleStrokes: snapshot ? dataStrokes : [], // in snapshot mode we render all at once
       isPlaying: snapshot ? false : !!autoplay,
       playbackSpeed: speed || p.playbackSpeed || 1,
     }));
     // New End
   }, [dataStrokes, autoplay, speed, snapshot]);
 
-  // Keep speed in sync if prop changes
+  // Keep speed in sync if prop changes (non-snapshot mode)
   useEffect(() => {
     setPlaybackState((p) => ({ ...p, playbackSpeed: speed || p.playbackSpeed || 1 }));
   }, [speed]);
 
+  // ===== Playback (non-snapshot) timing loop =====
   const tick = useCallback(
     (t: number) => {
-      // If we're in snapshot mode, no ticking/animation is needed.
-      if (snapshot) return;
+      if (snapshot) return; // No animation in snapshot mode
 
       // FIX: handle null baseline explicitly
       const baseline = lastTimeRef.current === null ? t : lastTimeRef.current;
@@ -208,12 +211,7 @@ const CanvasPlayback: React.FC<CanvasPlaybackProps> = ({
         animationRef.current = requestAnimationFrame(tick);
       }
     },
-    // Old Start
-    // [playbackState.isPlaying, playbackState.playbackSpeed, strokes]
-    // Old End
-    // New Start
     [playbackState.isPlaying, playbackState.playbackSpeed, dataStrokes, snapshot]
-    // New End
   );
 
   useEffect(() => {
@@ -242,7 +240,12 @@ const CanvasPlayback: React.FC<CanvasPlaybackProps> = ({
   const play = () => setPlaybackState((p) => ({ ...p, isPlaying: true }));
   const pause = () => setPlaybackState((p) => ({ ...p, isPlaying: false }));
   const reset = () =>
-    setPlaybackState((p) => ({ ...p, isPlaying: false, currentTime: 0, visibleStrokes: snapshot ? dataStrokes : [] }));
+    setPlaybackState((p) => ({
+      ...p,
+      isPlaying: false,
+      currentTime: 0,
+      visibleStrokes: snapshot ? dataStrokes : [],
+    }));
   const skipBack = () =>
     setPlaybackState((p) => ({ ...p, currentTime: Math.max(0, p.currentTime - 2000) }));
   const skipForward = () =>
@@ -250,6 +253,91 @@ const CanvasPlayback: React.FC<CanvasPlaybackProps> = ({
       ...p,
       currentTime: Math.min(p.totalDuration, p.currentTime + 2000),
     }));
+
+  // ===== Snapshot renderer (HTML canvas) =====
+  // Many systems store strokes as raw points rather than SVG path strings.
+  // We therefore replay strokes onto a <canvas> so erasing works (destination-out).
+  useEffect(() => {
+    if (!snapshot) return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const dpr = (window && window.devicePixelRatio) || 1;
+    // Resize for HiDPI
+    canvas.width = Math.max(1, Math.floor(width * dpr));
+    canvas.height = Math.max(1, Math.floor(height * dpr));
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Scale to CSS pixels
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    const toNumber = (v: any) =>
+      typeof v === 'number' ? v : Number(v ?? 0);
+
+    const drawPath2D = (sd: any, s: CanvasStroke) => {
+      if (!sd?.d || typeof Path2D === 'undefined') return false;
+      try {
+        const path = new Path2D(sd.d);
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = (s as any).stroke_width ?? 2;
+        ctx.strokeStyle = (s as any).stroke_color ?? '#000';
+        const isEraser = String((s as any).tool_type || '').toLowerCase().includes('eras');
+        ctx.globalCompositeOperation = isEraser ? 'destination-out' : 'source-over';
+        ctx.stroke(path);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    const drawFromPoints = (sd: any, s: CanvasStroke) => {
+      // Accept sd.points | sd.pts | s.points; each item could be {x,y} or [x,y]
+      const pts =
+        (sd && (sd.points || sd.pts)) ||
+        (s as any).points ||
+        null;
+      if (!Array.isArray(pts) || pts.length === 0) return false;
+
+      const getXY = (pt: any) => {
+        if (Array.isArray(pt)) return { x: toNumber(pt[0]), y: toNumber(pt[1]) };
+        return { x: toNumber(pt?.x), y: toNumber(pt?.y) };
+      };
+
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = (s as any).stroke_width ?? 2;
+      ctx.strokeStyle = (s as any).stroke_color ?? '#000';
+      const isEraser = String((s as any).tool_type || '').toLowerCase().includes('eras');
+      ctx.globalCompositeOperation = isEraser ? 'destination-out' : 'source-over';
+
+      ctx.beginPath();
+      const first = getXY(pts[0]);
+      ctx.moveTo(first.x, first.y);
+      for (let i = 1; i < pts.length; i++) {
+        const p = getXY(pts[i]);
+        ctx.lineTo(p.x, p.y);
+      }
+      ctx.stroke();
+      return true;
+    };
+
+    // Replay all strokes in order
+    for (const s of dataStrokes) {
+      const sd = (s as any).stroke_data ?? {};
+      // Prefer Path2D if available; otherwise draw via points
+      if (!drawPath2D(sd, s)) {
+        drawFromPoints(sd, s);
+      }
+    }
+  }, [snapshot, dataStrokes, width, height]);
+  // ===== End snapshot renderer =====
 
   // New Start: basic loading/error UX for sessionIds mode
   if (loading) {
@@ -268,7 +356,8 @@ const CanvasPlayback: React.FC<CanvasPlaybackProps> = ({
   }
   // New End
 
-  // New Start: choose which strokes to render (all for snapshot, progressive for playback)
+  // New Start: decide what to render (controls hidden in snapshot mode)
+  const showControls = !snapshot;
   const strokesToRender = snapshot ? dataStrokes : playbackState.visibleStrokes;
   // New End
 
@@ -279,7 +368,7 @@ const CanvasPlayback: React.FC<CanvasPlaybackProps> = ({
       {/* <div className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-t-lg"> ... </div> */}
       {/* Old End */}
       {/* New Start: hide controls in snapshot mode */}
-      {!snapshot && (
+      {showControls && (
         <div className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-t-lg">
           <div className="flex items-center space-x-2">
             {!playbackState.isPlaying ? (
@@ -332,27 +421,43 @@ const CanvasPlayback: React.FC<CanvasPlaybackProps> = ({
       )}
       {/* New End */}
 
-      {/* Playback canvas */}
-      <div className={`p-3 ${snapshot ? '' : ''}`}>
+      {/* Drawing surface */}
+      <div className="p-3">
         <div className="border rounded-lg overflow-hidden bg-gray-50">
-          <svg width={width} height={height} className="bg-white">
-            {strokesToRender.map((s) => (
-              <path
-                key={s.id}
-                d={s.stroke_data.d}
-                fill="none"
-                stroke={s.tool_type === 'eraser' ? '#FFFFFF' : s.stroke_color}
-                strokeWidth={s.stroke_width}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                style={{
-                  // Note: CSS mix-blend-mode doesn't support 'destination-out'; this mirrors
-                  // prior behavior. If you truly need erasing in SVG, consider masks/clipPaths.
-                  mixBlendMode: s.tool_type === 'eraser' ? ('destination-out' as any) : 'normal',
-                }}
-              />
-            ))}
-          </svg>
+          {/* Old Start: SVG-only renderer (fails for erasing and point-based strokes) */}
+          {/* <svg width={width} height={height} className="bg-white"> ... </svg> */}
+          {/* Old End */}
+
+          {/* New Start: snapshot uses HTML canvas; playback uses SVG */}
+          {snapshot ? (
+            <canvas ref={canvasRef} width={width} height={height} className="block bg-white" />
+          ) : (
+            <svg width={width} height={height} className="bg-white">
+              {strokesToRender.map((s) => (
+                <path
+                  key={s.id}
+                  d={(s as any)?.stroke_data?.d || '' /* If empty, nothing is drawn (OK) */}
+                  fill="none"
+                  stroke={
+                    String((s as any).tool_type || '').toLowerCase().includes('eras')
+                      ? '#FFFFFF'
+                      : (s as any).stroke_color
+                  }
+                  strokeWidth={(s as any).stroke_width}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{
+                    // Note: CSS mix-blend-mode doesn't support 'destination-out' in SVG;
+                    // playback mode won't truly erase. Snapshot mode (canvas) handles erasing correctly.
+                    mixBlendMode: String((s as any).tool_type || '').toLowerCase().includes('eras')
+                      ? ('destination-out' as any)
+                      : 'normal',
+                  }}
+                />
+              ))}
+            </svg>
+          )}
+          {/* New End */}
         </div>
 
         {/* Stats */}
@@ -363,14 +468,10 @@ const CanvasPlayback: React.FC<CanvasPlaybackProps> = ({
           {/* New Start */}
           <span>Strokes: {dataStrokes.length}</span>
           {/* New End */}
-          <span>
-            Visible: {snapshot ? dataStrokes.length : playbackState.visibleStrokes.length}
-          </span>
+          <span>Visible: {snapshot ? dataStrokes.length : playbackState.visibleStrokes.length}</span>
           <span>Duration: {formatTime(playbackState.totalDuration)}</span>
-          {/* New Start: show mode */}
           {sessionIds && <span>Merged from {sessionIds.length} sessions</span>}
           {snapshot && <span>Snapshot</span>}
-          {/* New End */}
         </div>
       </div>
     </div>
