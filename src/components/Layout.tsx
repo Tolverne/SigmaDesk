@@ -1,46 +1,27 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import RLSErrorBanner from './RLSErrorBanner';
 
 interface LayoutProps {
   children: React.ReactNode;
 }
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
-  // ⬇️ Added clearErrors from AuthContext (non-breaking addition we made earlier)
-  const { user, profile, signOut, hasRLSIssue, clearErrors } = useAuth();
+  const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [isSigningOut, setIsSigningOut] = useState(false);
 
-  // Clear any persistent error states and cached requests when navigating
-  useEffect(() => {
-    // Clear transient auth/DB flags (e.g., after visiting a broken link)
-    if (typeof clearErrors === 'function') {
-      clearErrors();
-    }
-    // Clear any cached requests when navigating to prevent error persistence
-    //if ((window as any).courseService?.clearCache) {
-    //  (window as any).courseService.clearCache();
-    //}
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname]);
-
   const handleSignOut = async () => {
-    if (isSigningOut) return; // Prevent double-click
+    if (isSigningOut) return;
     try {
       setIsSigningOut(true);
-      console.log('🔄 Layout: Starting sign out process...');
-
+      console.log('Layout: Starting sign out process...');
       await signOut();
-
-      // Use client-side navigation to keep providers mounted and avoid races
-      console.log('🏠 Layout: Redirecting to login...');
+      console.log('Layout: Redirecting to login...');
       navigate('/login', { replace: true });
     } catch (error) {
-      console.error('❌ Layout: Error during sign out:', error);
-      // Fallback to client-side navigation even on error
+      console.error('Layout: Error during sign out:', error);
       navigate('/login', { replace: true });
     } finally {
       setIsSigningOut(false);
@@ -68,7 +49,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             <nav className="flex items-center space-x-4">
               {user ? (
                 <>
-                  {/* Navigation Links */}
                   <Link
                     to="/courses"
                     className={`text-gray-600 hover:text-gray-800 transition-colors ${
@@ -87,7 +67,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     Dashboard
                   </Link>
 
-                  {/* Management link for non-students */}
                   {profile?.role && profile.role !== 'student' && (
                     <Link
                       to="/manage"
@@ -97,13 +76,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     </Link>
                   )}
 
-                  {/* User Info */}
                   <div className="flex items-center space-x-2">
                     <span className="text-sm text-gray-500">
                       {profile?.full_name || user.email}
                     </span>
 
-                    {/* Role Badge */}
                     {profile?.role && (
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-semibold ${
@@ -117,19 +94,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                         {profile.role.toUpperCase()}
                       </span>
                     )}
-
-                    {!profile && (
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                          hasRLSIssue ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
-                        }`}
-                      >
-                        {hasRLSIssue ? 'DB ISSUE' : 'SETUP NEEDED'}
-                      </span>
-                    )}
                   </div>
 
-                  {/* Sign Out Button */}
                   <button
                     onClick={handleSignOut}
                     disabled={isSigningOut}
@@ -139,7 +105,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   </button>
                 </>
               ) : (
-                /* Sign In Link for non-authenticated users */
                 <Link
                   to="/login"
                   className="px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
@@ -154,20 +119,16 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Show RLS error banner when database issues are detected */}
-        <RLSErrorBanner />
-
         {children}
       </main>
 
-      {/* Footer with additional debug info in development */}
       {process.env.NODE_ENV === 'development' && (
         <footer className="bg-gray-800 text-white p-2 text-xs">
           <div className="max-w-7xl mx-auto px-4 flex justify-between items-center">
             <span>Development Mode</span>
             <span>
               User: {user ? '✅' : '❌'} |{' '}
-              Profile: {profile ? `✅ ${profile.role}` : hasRLSIssue ? '🚨 RLS Issue' : '❌'} |{' '}
+              Profile: {profile ? `✅ ${profile.role}` : '❌'} |{' '}
               Path: {location.pathname}
             </span>
           </div>
