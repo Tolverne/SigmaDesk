@@ -5,10 +5,10 @@ import { Course } from '../types/course.types';
 interface CourseCardProps {
   course: Course;
   isEnrolled?: boolean;
-  onEnroll?: () => void;
+  className?: string;
 }
 
-const CourseCard: React.FC<CourseCardProps> = ({ course, isEnrolled, onEnroll }) => {
+const CourseCard: React.FC<CourseCardProps> = ({ course, isEnrolled, className }) => {
   const navigate = useNavigate();
 
   const handleClick = () => {
@@ -18,11 +18,13 @@ const CourseCard: React.FC<CourseCardProps> = ({ course, isEnrolled, onEnroll })
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow cursor-pointer overflow-hidden">
-      <div 
-        className="p-6"
-        onClick={handleClick}
-      >
+    <div 
+      className={`bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow overflow-hidden ${
+        isEnrolled ? 'cursor-pointer' : ''
+      } ${className || ''}`}
+      onClick={isEnrolled ? handleClick : undefined}
+    >
+      <div className="p-6">
         {/* Course Header */}
         <div className="flex justify-between items-start mb-4">
           <h3 className="text-xl font-semibold text-gray-800">
@@ -79,15 +81,9 @@ const CourseCard: React.FC<CourseCardProps> = ({ course, isEnrolled, onEnroll })
               Continue Learning
             </button>
           ) : (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onEnroll?.();
-              }}
-              className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
-            >
-              Enroll in Course
-            </button>
+            <div className="w-full px-4 py-2 bg-gray-100 text-gray-500 rounded-md text-center text-sm">
+              Contact your administrator to enroll
+            </div>
           )}
         </div>
       </div>

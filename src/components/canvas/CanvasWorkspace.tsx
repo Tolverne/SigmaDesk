@@ -5,6 +5,9 @@ import type { CanvasSession, CanvasStroke, CanvasType, CanvasState, Point, SVGPa
 import { STUDENT_COLORS, STROKE_WIDTHS } from '../../types/canvas.types';
 import { canvasService, offlineCanvasService } from '../../services/canvasService';
 import CanvasToolbar from './CanvasToolbar';
+// New Start: playback
+import CanvasPlayback from './CanvasPlayback';
+// New End
 
 type BaseProps = {
   className?: string;
@@ -52,6 +55,12 @@ const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = (props) => {
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
   const drawingPointsRef = useRef<Point[]>([]);
   const nextOrderRef = useRef<number>(1);
+
+  // New Start: local playback toggle + sizing that matches drawing surface
+  const [showPlayback, setShowPlayback] = useState<boolean>(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [surfaceSize, setSurfaceSize] = useState<{ width: number; height: number }>({ width: 800, height: 400 });
+  // New End
 
   // Session fetch — split by prop shape with precise deps
   useEffect(() => {
@@ -202,15 +211,25 @@ const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = (props) => {
 
   const resize = useCallback(() => {
     const canvas = canvasRef.current;
+    const holder = containerRef.current; // New
     if (!canvas) return;
     const dpr = window.devicePixelRatio || 1;
+    // Use the container width and the fixed height (400) to size both live canvas and playback
     const rect = canvas.getBoundingClientRect();
-    canvas.width = Math.max(1, Math.floor(rect.width * dpr));
-    canvas.height = Math.max(1, Math.floor((rect.height || 400) * dpr));
+    const widthCss = rect.width || (holder ? holder.clientWidth : 800);
+    const heightCss = rect.height || 400;
+
+    canvas.width = Math.max(1, Math.floor(widthCss * dpr));
+    canvas.height = Math.max(1, Math.floor(heightCss * dpr));
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctxRef.current = ctx;
-    ctx.scale(dpr, dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // New Start: store CSS size for playback
+    setSurfaceSize({ width: Math.round(widthCss), height: Math.round(heightCss) });
+    // New End
+
     redraw();
   }, [redraw]);
 
@@ -253,8 +272,6 @@ const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = (props) => {
       if (isOnline) {
         const saved = await canvasService.saveStroke(stroke);
         console.log('[CanvasWorkspace] pushStroke → server ack');
-        // We don’t have the server id (RLS-safe insert w/o select), keep optimistic row
-        // but we still replace with “saved” echo to keep timestamps consistent:
         setStrokes((prev) => prev.map((s) => (s.id === optimistic.id ? saved : s)));
       } else {
         console.log('[CanvasWorkspace] offline → staging stroke');
@@ -363,7 +380,16 @@ const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = (props) => {
       />
 
       <div className="border border-gray-200 rounded-b-lg overflow-hidden bg-white">
-        <div className="relative" style={{ height: 400 }}>
+        <div
+          // Old Start: no ref for container sizing
+          // className="relative" style={{ height: 400 }}
+          // Old End
+          // New Start: keep same layout but capture ref for playback sizing
+          ref={containerRef}
+          className="relative"
+          style={{ height: 400 }}
+          // New End
+        >
           {loadingSession && (
             <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-500 z-10">
               Preparing Canvas…
@@ -379,6 +405,29 @@ const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = (props) => {
           />
         </div>
       </div>
+
+      {/* New Start: Playback toggle + player (order-based; has speed control) */}
+      <div className="mt-3">
+        <button
+          onClick={() => setShowPlayback(v => !v)}
+          className="px-3 py-2 rounded-md border bg-white text-gray-700"
+        >
+          {showPlayback ? 'Hide' : 'Show'} Playback
+        </button>
+
+        {showPlayback && session?.id && (
+          <div className="mt-3">
+            <CanvasPlayback
+              sessionIds={[session.id]}
+              width={surfaceSize.width}
+              height={surfaceSize.height}
+              initialFull
+              // stepsPerSecond control is built into CanvasPlayback UI
+            />
+          </div>
+        )}
+      </div>
+      {/* New End */}
     </div>
   );
 };

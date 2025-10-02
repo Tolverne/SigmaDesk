@@ -15,7 +15,7 @@ import { supabase } from '../../utils/supabase';
 // (previously we only used CanvasWorkspace overlays for student@teacher_example)
 // Old End
 
-// New Start: merged snapshot playback helpers
+// New Start: merged playback (order-based) for teacher_example view
 import CanvasPlayback from './CanvasPlayback';
 import { getTeacherExampleSessionIds } from '../../services/canvasService';
 // New End
@@ -46,7 +46,7 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
   // Role resolution (AuthContext preferred; fallback to user_profiles)
   const [viewerRole, setViewerRole] = useState<ViewerRole>('student');
 
-  // New Start: list of ALL teacher_example sessions (for student snapshot)
+  // New Start: list of ALL teacher_example sessions (for student merged playback)
   const [teacherSessionIds, setTeacherSessionIds] = useState<string[] | null>(null);
   const [teacherSessionsLoading, setTeacherSessionsLoading] = useState<boolean>(false);
   // New End
@@ -147,7 +147,7 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
     };
   }, [lessonId, slotIndex, canvasType, viewerUserId, viewerRole]);
 
-  // New Start: For student@teacher_example, fetch ALL teacher session IDs (for snapshot)
+  // New Start: For student@teacher_example, fetch ALL teacher session IDs (for merged playback)
   useEffect(() => {
     let cancelled = false;
 
@@ -228,7 +228,7 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
     );
   }
 
-  // Old Start: student@teacher_example used overlays / playback timeline
+  // Old Start: student@teacher_example → snapshot-only (final image)
   /*
   if (viewerRole === 'student' && isTeacherExampleView) {
     if (teacherSessionsLoading) {
@@ -243,8 +243,7 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
       return (
         <CanvasPlayback
           sessionIds={teacherSessionIds}
-          autoplay
-          speed={1}
+          snapshot
           className={`${className || ''} pointer-events-none`}
         />
       );
@@ -254,8 +253,7 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
       return (
         <CanvasPlayback
           sessionIds={[sessionId]}
-          autoplay
-          speed={1}
+          snapshot
           className={`${className || ''} pointer-events-none`}
         />
       );
@@ -270,7 +268,7 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
   */
   // Old End
 
-  // New Start: student@teacher_example → render a *snapshot* (final image only)
+  // New Start: student@teacher_example → merged order-based playback (full image initially, with steps/sec control)
   if (viewerRole === 'student' && isTeacherExampleView) {
     if (teacherSessionsLoading) {
       return (
@@ -280,24 +278,26 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
       );
     }
 
-    // Prefer merged snapshot from all teacher sessions
+    // Prefer merged playback from all teacher sessions
     if (teacherSessionIds && teacherSessionIds.length) {
       return (
         <CanvasPlayback
           sessionIds={teacherSessionIds}
-          snapshot
-          className={`${className || ''} pointer-events-none`}
+          initialFull
+          stepsPerSecond={40}
+          className={className}
         />
       );
     }
 
-    // Fallback: snapshot from the resolver's single teacher session
+    // Fallback: playback from the resolver's single teacher session
     if (sessionId) {
       return (
         <CanvasPlayback
           sessionIds={[sessionId]}
-          snapshot
-          className={`${className || ''} pointer-events-none`}
+          initialFull
+          stepsPerSecond={40}
+          className={className}
         />
       );
     }

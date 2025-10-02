@@ -13,52 +13,36 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 }) => {
   const { user, profile, loading } = useAuth();
   const [timeoutReached, setTimeoutReached] = useState(false);
+  const [startTime] = useState(Date.now());
   const location = useLocation();
 
   useEffect(() => {
-    if (loading) {
-      const timer = setTimeout(() => {
-        console.warn('ProtectedRoute: Loading timeout reached');
-        setTimeoutReached(true);
-      }, 15000);
-
-      return () => clearTimeout(timer);
-    } else {
+    if (!loading) {
       setTimeoutReached(false);
+      return;
     }
-  }, [loading]);
 
-  if (timeoutReached && loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-center max-w-md mx-auto p-6 bg-white rounded-lg shadow-lg">
-          <div className="text-red-500 text-5xl mb-4">⚠️</div>
-          <h2 className="text-xl font-semibold text-gray-800 mb-4">
-            Authentication Timeout
-          </h2>
-          <p className="text-gray-600 mb-4">
-            We're having trouble verifying your login.
-          </p>
-          <div className="space-y-3">
-            <button
-              onClick={() => window.location.reload()}
-              className="w-full px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700"
-            >
-              Retry
-            </button>
-            <button
-              onClick={() => { window.location.href = '/login'; }}
-              className="w-full px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600"
-            >
-              Sign In Again
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+    // Only timeout if loading for more than 30 seconds AND we've been on this page for at least 5 seconds
+    // This prevents timeout when quickly navigating or switching tabs
+    const minWaitTime = 5000;
+    const maxWaitTime = 30000;
 
-  if (loading) {
+    const timer = setTimeout(() => {
+      const elapsed = Date.now() - startTime;
+      if (elapsed >= minWaitTime) {
+        console.warn('ProtectedRoute: Loading timeout reached after', elapsed, 'ms');
+        setTimeoutReached(true);
+      }
+    }, maxWaitTime);
+
+    return () => clearTimeout(timer);
+  }, [loading, startTime]);
+
+  // Show loading spinner with progress indicator
+  if (loading && !timeoutReached) {
+    const elapsed = Math.min(Date.now() - startTime, 30000);
+    const progress = (elapsed / 30000) * 100;
+
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
         <div className="text-center max-w-md mx-auto p-6">
@@ -68,16 +52,55 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
           <h3 className="text-lg font-semibold text-gray-800 mb-2">
             Loading...
           </h3>
+          <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
+            <div 
+              className="bg-sigma-blue h-2 rounded-full transition-all duration-1000"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
           <p className="text-sm text-gray-600">
-            Please wait while we verify your session
+            Verifying your session
           </p>
         </div>
       </div>
     );
   }
 
+  // Timeout error with retry
+  if (timeoutReached && loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="text-center max-w-md mx-auto p-6 bg-white rounded-lg shadow-lg">
+          <div className="text-yellow-500 text-5xl mb-4">⏱️</div>
+          <h2 className="text-xl font-semibold text-gray-800 mb-4">
+            Taking Longer Than Expected
+          </h2>
+          <p className="text-gray-600 mb-4">
+            The connection is slow. This might be due to network issues.
+          </p>
+          <div className="space-y-3">
+            <button
+              onClick={() => {
+                setTimeoutReached(false);
+                window.location.reload();
+              }}
+              className="w-full px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700"
+            >
+              Retry
+            </button>
+            <button
+              onClick={() => { window.location.href = '/'; }}
+              className="w-full px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600"
+            >
+              Go Home
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!user) {
-    console.log('ProtectedRoute: No user found, redirecting to login');
     const from = location.pathname + location.search;
     return <Navigate to="/login" state={{ from }} replace />;
   }
@@ -92,13 +115,13 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
               Profile Setup Required
             </h2>
             <p className="text-gray-600 mb-6">
-              Your account needs a profile to access this area. Please contact your administrator.
+              Contact your administrator for access.
             </p>
             <button
               onClick={() => { window.location.href = '/'; }}
               className="w-full px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700"
             >
-              Go to Home Page
+              Go Home
             </button>
           </div>
         </div>
@@ -106,7 +129,6 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     }
 
     if (!allowedRoles.includes(profile.role)) {
-      console.log('ProtectedRoute: Role not allowed:', profile.role);
       return <Navigate to="/unauthorized" replace />;
     }
   }

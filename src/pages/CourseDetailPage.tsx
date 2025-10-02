@@ -17,16 +17,10 @@ const CourseDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // A nonce to trigger reloads (if you add a retry button later)
-  const [reloadNonce] = useState(0);
-
-  // keep a ref to detect unmount and avoid state updates after abort
   const mountedRef = useRef(true);
 
   useEffect(() => {
     mountedRef.current = true;
-
-    // Abort controller for this load
     const controller = new AbortController();
     const { signal } = controller;
 
@@ -48,7 +42,6 @@ const CourseDetailPage: React.FC = () => {
       setError(null);
 
       try {
-        // Load course details and enrollment in parallel
         const [details, enrolled] = await Promise.all([
           courseService.getCourseDetails(courseId, { signal }),
           user ? courseService.checkEnrollment(courseId, user.id, { signal }) : Promise.resolve(false),
@@ -60,10 +53,7 @@ const CourseDetailPage: React.FC = () => {
         setTopics(details?.topics || []);
         setIsEnrolled(!!enrolled);
       } catch (err: any) {
-        if (err?.name === 'AbortError') {
-          // silent on abort
-          return;
-        }
+        if (err?.name === 'AbortError') return;
         console.error('Error loading course:', err);
         if (mountedRef.current && !signal.aborted) {
           const msg = String(err?.message || '');
@@ -88,26 +78,7 @@ const CourseDetailPage: React.FC = () => {
       mountedRef.current = false;
       controller.abort();
     };
-    // Reload when the course or user changes (enrollment depends on user)
-  }, [courseId, user?.id, reloadNonce]);
-
-  const handleEnroll = async () => {
-    if (!user || !courseId) {
-      alert('Please sign in to enroll');
-      navigate('/login');
-      return;
-    }
-
-    try {
-      await courseService.enrollInCourse(courseId, user.id);
-      if (mountedRef.current) {
-        setIsEnrolled(true);
-      }
-      alert('Successfully enrolled!');
-    } catch (error: any) {
-      alert(error?.message || 'Failed to enroll');
-    }
-  };
+  }, [courseId, user?.id]);
 
   const startLearning = () => {
     const firstLessonId = topics?.[0]?.lessons?.[0]?.id;
@@ -116,7 +87,6 @@ const CourseDetailPage: React.FC = () => {
     }
   };
 
-  // Loading state
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
@@ -125,7 +95,6 @@ const CourseDetailPage: React.FC = () => {
     );
   }
 
-  // Error / Not found state
   if (error && !course) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-8">
@@ -135,11 +104,7 @@ const CourseDetailPage: React.FC = () => {
           <h2 className="text-xl font-semibold text-red-800 mb-2">
             {error === 'Course not found' ? 'Course Not Found' : 'Failed to Load Course'}
           </h2>
-          <p className="text-red-600 mb-6">
-            {error === 'Course not found'
-              ? 'The course you are looking for does not exist or may have been removed.'
-              : error}
-          </p>
+          <p className="text-red-600 mb-6">{error}</p>
           <div className="space-x-4">
             <button
               onClick={() => navigate('/courses')}
@@ -173,7 +138,6 @@ const CourseDetailPage: React.FC = () => {
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Course Info */}
         <div className="lg:col-span-2">
           <div className="bg-white rounded-lg shadow p-6">
             <h1 className="text-3xl font-bold text-gray-800 mb-4">
@@ -184,16 +148,13 @@ const CourseDetailPage: React.FC = () => {
             </p>
 
             {!isEnrolled ? (
-              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <p className="text-yellow-800 mb-4">
-                  You need to enroll in this course to access its content.
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-blue-800 mb-2">
+                  You are not enrolled in this course.
                 </p>
-                <button
-                  onClick={handleEnroll}
-                  className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
-                >
-                  Enroll Now
-                </button>
+                <p className="text-sm text-blue-700">
+                  Contact your administrator to be added to a class for this course.
+                </p>
               </div>
             ) : (
               <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
@@ -211,7 +172,6 @@ const CourseDetailPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Course Navigation */}
         <div className="lg:col-span-1">
           <CourseNavigation topics={topics} courseId={courseId!} />
         </div>

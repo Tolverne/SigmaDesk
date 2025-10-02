@@ -5,38 +5,12 @@ import { supabase } from '../utils/supabase';
 
 // New Start: include CanvasType so we can pass the canvas_type to the DB
 import type { CanvasSession, CanvasStroke, CanvasType } from '../types/canvas.types';
-
-
 // New End
-
-
-
 
 export const canvasService = {
   // Create or fetch a session for a specific slot in the lesson
   // Old Start: original createCanvasSession without canvasType support
-  // async createCanvasSession(lessonId: string, userId: string, slotIndex: number): Promise<CanvasSession> {
-  //   const { data, error } = await supabase
-  //     .from('canvas_sessions')
-  //     .insert({
-  //       lesson_id: lessonId,
-  //       user_id: userId,
-  //       slot_index: slotIndex,
-  //       canvasType?: CanvasType,
-  //       title: `Canvas ${slotIndex + 1} for Lesson ${lessonId.slice(0, 8)}`,
-  //     })
-  //     .select()
-  //     .single();
-  //
-  //   if (error) {
-  //     // Unique violation → session already exists, fetch it
-  //     if ((error as any).code === '23505') {
-  //       return this.getCanvasSession(lessonId, userId, slotIndex);
-  //     }
-  //     throw error;
-  //   }
-  //   return data as CanvasSession;
-  // },
+  // async createCanvasSession(lessonId: string, userId: string, slotIndex: number): Promise<CanvasSession> { ... }
   // Old End
 
   // New Start: createCanvasSession now (optionally) accepts a CanvasType and writes to `canvas_type`
@@ -77,24 +51,7 @@ export const canvasService = {
   // New End
 
   // Old Start: original getCanvasSession without canvasType filter and auto-create passing no type
-  // async getCanvasSession(lessonId: string, userId: string, slotIndex: number, canvasType?: CanvasType): Promise<CanvasSession> {
-  //   const { data, error } = await supabase
-  //     .from('canvas_sessions')
-  //     .select('*')
-  //     .eq('lesson_id', lessonId)
-  //     .eq('user_id', userId)
-  //     .eq('slot_index', slotIndex)
-  //     .single();
-  //
-  //   if (error) {
-  //     if ((error as any).code === 'PGRST116') {
-  //       // not found → create it
-  //       return this.createCanvasSession(lessonId, userId, slotIndex);
-  //     }
-  //     throw error;
-  //   }
-  //   return data as CanvasSession;
-  // },
+  // async getCanvasSession(...) { ... }
   // Old End
 
   // New Start: getCanvasSession optionally filters by canvas_type and auto-creates with that same type
@@ -172,7 +129,6 @@ export const canvasService = {
   // Strokes
   async saveStroke(stroke: Omit<CanvasStroke, 'id' | 'created_at'>): Promise<CanvasStroke> {
     // IMPORTANT: we do NOT call .select() here to avoid RLS "insert ok / select denied" problems.
-    // We log verbosely so you can see every insert attempt from the UI.
     console.log('[canvasService.saveStroke] insert →', {
       session_id: (stroke as any).session_id,
       stroke_order: (stroke as any).stroke_order,
@@ -490,7 +446,7 @@ async function getAllStudentSessionsForSlot(
 }
 
 /**
- * NEW: Resolve what to show for a placeholder canvas in a lesson.
+ * Resolve what to show for a placeholder canvas in a lesson.
  *
  * Rules:
  * - canvas_type = 'student'
@@ -500,6 +456,10 @@ async function getAllStudentSessionsForSlot(
  *    - viewer is teacher  -> *their* own teacher session (create if missing), read/write
  *    - viewer is student  -> latest teacher session, read-only (if none yet, null → caller may render empty)
  */
+// Old Start
+// export async function resolveCanvasViewForUser(params: { ... }): Promise<ResolvedCanvasView | null> { ... }
+// Old End
+// New Start: accept optional createIfMissing (used by CanvasSlot; defaults true)
 export async function resolveCanvasViewForUser(
   params: {
     lessonId: string;
@@ -507,16 +467,27 @@ export async function resolveCanvasViewForUser(
     canvasType: CanvasType;       // 'student' | 'teacher' | 'teacher_example'
     viewerUserId: string;
     viewerRole: ViewerRole;       // 'student' | 'teacher'
+    createIfMissing?: boolean;    // default true
   }
 ): Promise<ResolvedCanvasView | null> {
-  const { lessonId, slotIndex, canvasType, viewerUserId, viewerRole } = params;
+  const {
+    lessonId,
+    slotIndex,
+    canvasType,
+    viewerUserId,
+    viewerRole,
+    createIfMissing = true,
+  } = params;
+
   console.log('[resolver] resolveCanvasViewForUser called with', params);
 
   // STUDENT canvas slot
   if (canvasType === 'student') {
     if (viewerRole === 'student') {
       // Student edits their own board
-      const session = await canvasService.getOrCreateSession(lessonId, viewerUserId, slotIndex, 'student');
+      const session = createIfMissing
+        ? await canvasService.getOrCreateSession(lessonId, viewerUserId, slotIndex, 'student')
+        : await canvasService.getCanvasSession(lessonId, viewerUserId, slotIndex, 'student');
       return { kind: 'single', session, readOnly: false };
     } else {
       // Teacher reviews student work as a carousel
@@ -530,7 +501,9 @@ export async function resolveCanvasViewForUser(
 
   if (viewerRole === 'teacher') {
     // Teacher edits their own teacher board for that slot
-    const session = await canvasService.getOrCreateSession(lessonId, viewerUserId, slotIndex, teacherType);
+    const session = createIfMissing
+      ? await canvasService.getOrCreateSession(lessonId, viewerUserId, slotIndex, teacherType)
+      : await canvasService.getCanvasSession(lessonId, viewerUserId, slotIndex, teacherType);
     return { kind: 'single', session, readOnly: false };
   } else {
     // Student sees (read-only) the latest teacher board for that slot
@@ -539,7 +512,7 @@ export async function resolveCanvasViewForUser(
     return { kind: 'single', session, readOnly: true };
   }
 }
-
+// New End
 
 export async function getTeacherExampleSessionIds(lessonId: string, slotIndex: number): Promise<string[]> {
   const { data, error } = await supabase
@@ -554,7 +527,11 @@ export async function getTeacherExampleSessionIds(lessonId: string, slotIndex: n
   return (data ?? []).map((r: any) => r.id as string);
 }
 
+// Old Start: time-normalizing merge (timestamp-based with fallbacks)
+// export async function getMergedStrokesForSessions(sessionIds: string[]): Promise<CanvasStroke[]> { ... }
+// Old End
 
+// New Start: strict ORDER-BASED merge (primary: stroke_order; fallback: created_at)
 export async function getMergedStrokesForSessions(sessionIds: string[]): Promise<CanvasStroke[]> {
   if (!sessionIds?.length) return [];
 
@@ -562,18 +539,16 @@ export async function getMergedStrokesForSessions(sessionIds: string[]): Promise
     .from('canvas_strokes')
     .select('id, session_id, stroke_data, tool_type, stroke_color, stroke_width, timestamp_ms, stroke_order, created_at')
     .in('session_id', sessionIds)
-    // Order helps, but we still normalize below
-    .order('timestamp_ms', { ascending: true, nullsFirst: true })
+    // DB-side ordering helps; we still enforce sort in JS for safety
     .order('stroke_order', { ascending: true, nullsFirst: true })
     .order('created_at', { ascending: true, nullsFirst: true });
 
   if (error) throw new Error(error.message);
 
-  // Parse + coerce to CanvasStroke while computing a usable numeric time
   type Raw = {
     id: string;
     session_id: string;
-    stroke_data: any; // JSON or stringified JSON
+    stroke_data: any;             // JSON or stringified JSON
     tool_type: string;
     stroke_color: string;
     stroke_width: number;
@@ -584,45 +559,37 @@ export async function getMergedStrokesForSessions(sessionIds: string[]): Promise
 
   const rows = (data ?? []) as Raw[];
 
-  // First pass: compute a fallback numeric time for each row
-  const EST_MS_PER_STROKE = 40; // ~25 fps spacing if timestamps missing
-  let syntheticCounter = 0;
-
-  const withTime = rows.map((r, idx) => {
-    // Parse stroke_data if it is stringified
+  const parsed: CanvasStroke[] = rows.map((r) => {
     let sd: any = r.stroke_data;
     if (sd && typeof sd === 'string') {
-      try { sd = JSON.parse(sd); } catch { /* leave as-is */ }
+      try { sd = JSON.parse(sd); } catch { /* leave as string if invalid */ }
     }
-
-    // Decide a time basis:
-    const created = r.created_at ? Date.parse(r.created_at) : NaN;
-    let t =
-      (typeof r.timestamp_ms === 'number' && !isNaN(r.timestamp_ms) ? r.timestamp_ms : null) ??
-      (typeof r.stroke_order === 'number' && !isNaN(r.stroke_order) ? r.stroke_order * EST_MS_PER_STROKE : null) ??
-      (!isNaN(created) ? created : null);
-
-    // If still null → synthesize strictly increasing
-    if (t === null) t = (syntheticCounter++) * EST_MS_PER_STROKE;
-
     return {
       id: r.id,
       session_id: r.session_id,
-      stroke_data: sd,               // expect { d: 'M...' } etc.
+      stroke_data: sd,
       tool_type: r.tool_type,
       stroke_color: r.stroke_color,
       stroke_width: r.stroke_width,
-      timestamp_ms: t,               // temporary absolute value
+      // Keep originals; player will ignore timestamps and use order
+      timestamp_ms: r.timestamp_ms ?? undefined,
+      stroke_order: r.stroke_order ?? undefined,
+      created_at: r.created_at ?? undefined,
     } as CanvasStroke;
   });
 
-  // Normalize to start at 0 and sort
-  const minT = withTime.reduce((min, s) => Math.min(min, s.timestamp_ms || 0), Number.POSITIVE_INFINITY);
-  const zero = Number.isFinite(minT) ? minT : 0;
+  // Enforce a stable, order-first sort in JS:
+  const byOrder = (a: CanvasStroke, b: CanvasStroke) => {
+    const ao = (a as any).stroke_order ?? Number.MAX_SAFE_INTEGER;
+    const bo = (b as any).stroke_order ?? Number.MAX_SAFE_INTEGER;
+    if (ao !== bo) return ao - bo;
+    const ac = (a as any).created_at ? Date.parse((a as any).created_at) : 0;
+    const bc = (b as any).created_at ? Date.parse((b as any).created_at) : 0;
+    if (ac !== bc) return ac - bc;
+    // final tiebreaker: id
+    return String((a as any).id).localeCompare(String((b as any).id));
+  };
 
-  const normalized = withTime
-    .map(s => ({ ...s, timestamp_ms: Math.max(0, (s.timestamp_ms || 0) - zero) }))
-    .sort((a, b) => (a.timestamp_ms || 0) - (b.timestamp_ms || 0));
-
-  return normalized;
+  return parsed.sort(byOrder);
 }
+// New End

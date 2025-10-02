@@ -331,62 +331,62 @@ export const courseService = {
   },
 
   // Enroll in a course with better conflict handling
-  async enrollInCourse(courseId: string, userId: string, opts?: RequestOpts): Promise<Enrollment> {
-    console.log('📝 courseService: Enrolling user', userId, 'in course', courseId);
+  // async enrollInCourse(courseId: string, userId: string, opts?: RequestOpts): Promise<Enrollment> {
+  //   console.log('📝 courseService: Enrolling user', userId, 'in course', courseId);
 
-    return withRetry(
-      async () => {
-        try {
-          // Check if already enrolled first
-          const { data: existing } = await supabase
-            .from('enrollments')
-            .select('id')
-            .eq('course_id', courseId)
-            .eq('user_id', userId)
-            .maybeSingle();
+  //   return withRetry(
+  //     async () => {
+  //       try {
+  //         // Check if already enrolled first
+  //         const { data: existing } = await supabase
+  //           .from('enrollments')
+  //           .select('id')
+  //           .eq('course_id', courseId)
+  //           .eq('user_id', userId)
+  //           .maybeSingle();
 
-          if (existing) {
-            throw new Error('Already enrolled in this course');
-          }
+  //         if (existing) {
+  //           throw new Error('Already enrolled in this course');
+  //         }
 
-          // Enroll the user
-          const { data, error } = await supabase
-            .from('enrollments')
-            .insert({
-              course_id: courseId,
-              user_id: userId,
-              enrolled_at: new Date().toISOString(),
-            })
-            .select()
-            .single();
+  //         // Enroll the user
+  //         const { data, error } = await supabase
+  //           .from('enrollments')
+  //           .insert({
+  //             course_id: courseId,
+  //             user_id: userId,
+  //             enrolled_at: new Date().toISOString(),
+  //           })
+  //           .select()
+  //           .single();
 
-          if (error) {
-            console.error('❌ Error enrolling in course:', error);
-            if ((error as any).code === '23505') {
-              throw new Error('Already enrolled in this course');
-            } else if ((error as any).code === '23503') {
-              throw new Error('Course or user not found');
-            } else if ((error as any).message?.includes('JWT')) {
-              throw new Error('Session expired. Please sign in again.');
-            }
-            throw new Error(`Enrollment failed: ${(error as any).message}`);
-          }
+  //         if (error) {
+  //           console.error('❌ Error enrolling in course:', error);
+  //           if ((error as any).code === '23505') {
+  //             throw new Error('Already enrolled in this course');
+  //           } else if ((error as any).code === '23503') {
+  //             throw new Error('Course or user not found');
+  //           } else if ((error as any).message?.includes('JWT')) {
+  //             throw new Error('Session expired. Please sign in again.');
+  //           }
+  //           throw new Error(`Enrollment failed: ${(error as any).message}`);
+  //         }
 
-          // Clear relevant caches after successful enrollment
-          requestCache.delete(`enrolled-courses-${userId}`);
+  //         // Clear relevant caches after successful enrollment
+  //         requestCache.delete(`enrolled-courses-${userId}`);
 
-          console.log('✅ Successfully enrolled in course');
-          return data as Enrollment;
-        } catch (error) {
-          console.error('❌ Exception in enrollInCourse:', error);
-          throw error;
-        }
-      },
-      2,
-      1000,
-      opts?.signal
-    );
-  },
+  //         console.log('✅ Successfully enrolled in course');
+  //         return data as Enrollment;
+  //       } catch (error) {
+  //         console.error('❌ Exception in enrollInCourse:', error);
+  //         throw error;
+  //       }
+  //     },
+  //     2,
+  //     1000,
+  //     opts?.signal
+  //   );
+  // },
 
   // Check enrollment status
   async checkEnrollment(courseId: string, userId: string, opts?: RequestOpts): Promise<boolean> {
