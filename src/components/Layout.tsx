@@ -67,12 +67,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     Dashboard
                   </Link>
 
-                  {profile?.role && profile.role !== 'student' && (
+                  {(profile?.role === 'admin' || profile?.role === 'super_admin') && (
                     <Link
-                      to="/manage"
+                      to="/admin"
                       className="text-gray-600 hover:text-gray-800 transition-colors"
                     >
-                      Manage
+                      Admin
                     </Link>
                   )}
 

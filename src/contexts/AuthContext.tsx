@@ -34,6 +34,7 @@ export const useAuth = () => {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const mountedRef = useRef(true);
   const profileAbortRef = useRef<AbortController | null>(null);
+  const sessionRefreshInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -88,6 +89,69 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(false);
   };
 
+  const setupSessionRefresh = (currentSession: Session) => {
+    // Clear existing interval
+    if (sessionRefreshInterval.current) {
+      clearInterval(sessionRefreshInterval.current);
+    }
+
+    // Refresh session every 5 minutes to keep it alive
+    sessionRefreshInterval.current = setInterval(async () => {
+      if (!mountedRef.current) return;
+      
+      try {
+        console.log('🔄 Auto-refreshing session...');
+        const { data, error } = await supabase.auth.refreshSession();
+        
+        if (error) {
+          console.warn('⚠️ Session refresh failed:', error);
+          return;
+        }
+        
+        if (data.session) {
+          console.log('✅ Session refreshed successfully');
+          setSession(data.session);
+        }
+      } catch (err) {
+        console.error('❌ Session refresh error:', err);
+      }
+    }, 5 * 60 * 1000); // 5 minutes
+  };
+
+  // Handle page visibility changes (when user switches tabs)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('📱 Page became visible');
+        
+        // If we have a user but no profile, try fetching it
+        if (user && !profile && !loading) {
+          console.log('🔄 Refreshing profile on page visibility...');
+          fetchProfile(user.id);
+        }
+        
+        // Check session validity
+        if (user && session) {
+          const expiresAt = session.expires_at ? session.expires_at * 1000 : 0;
+          const now = Date.now();
+          
+          // If session expires in less than 5 minutes, refresh it
+          if (expiresAt - now < 5 * 60 * 1000) {
+            console.log('🔄 Session expiring soon, refreshing...');
+            supabase.auth.refreshSession();
+          }
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user, profile, loading, session]);
+
+  // Main initialization effect
   useEffect(() => {
     mountedRef.current = true;
     let initTimeout: ReturnType<typeof setTimeout> | undefined;
@@ -96,12 +160,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         console.log('AuthContext: Starting initialization...');
 
+        // Increased timeout from 15s to 30s
         initTimeout = setTimeout(() => {
           if (mountedRef.current && loading) {
-            console.warn('Auth initialization timed out');
+            console.warn('⚠️ Auth initialization timed out after 30s');
             setLoading(false);
           }
-        }, 15000);
+        }, 30000);
 
         const {
           data: { session },
@@ -120,6 +185,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.log('AuthContext: Session found for:', session.user.email);
           setSession(session);
           setUser(session.user);
+          setupSessionRefresh(session);
           await fetchProfile(session.user.id);
         } else {
           console.log('AuthContext: No session found');
@@ -151,6 +217,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setSession(session);
             setUser(session.user);
             setLoading(true);
+            setupSessionRefresh(session);
             await fetchProfile(session.user.id);
             if (mountedRef.current) setLoading(false);
           }
@@ -158,6 +225,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         case 'SIGNED_OUT':
           console.log('User signed out');
+          if (sessionRefreshInterval.current) {
+            clearInterval(sessionRefreshInterval.current);
+            sessionRefreshInterval.current = null;
+          }
           clearAuthState();
           break;
 
@@ -166,9 +237,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             console.log('Token refreshed for:', session.user.email);
             setSession(session);
             setUser(session.user);
+            // Don't re-fetch profile on token refresh if we already have it
             if (!profile) {
               await fetchProfile(session.user.id);
             }
+          }
+          break;
+
+        case 'USER_UPDATED':
+          if (session?.user) {
+            console.log('User updated:', session.user.email);
+            setUser(session.user);
+            // Refresh profile when user is updated
+            await fetchProfile(session.user.id);
           }
           break;
 
@@ -180,16 +261,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       mountedRef.current = false;
       if (initTimeout) clearTimeout(initTimeout);
+      if (sessionRefreshInterval.current) {
+        clearInterval(sessionRefreshInterval.current);
+      }
       profileAbortRef.current?.abort();
       subscription.unsubscribe();
     };
-  }, []);
+  }, []); // Only run once on mount
 
   const signOut = async () => {
     try {
       console.log('Initiating sign out...');
       if (mountedRef.current) setLoading(true);
 
+      // Clear session refresh interval
+      if (sessionRefreshInterval.current) {
+        clearInterval(sessionRefreshInterval.current);
+        sessionRefreshInterval.current = null;
+      }
+
+      // Clear state immediately
       clearAuthState();
 
       const { error } = await supabase.auth.signOut();

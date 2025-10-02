@@ -11,8 +11,24 @@ import UnauthorizedPage from './pages/UnauthorizedPage';
 import CoursesPage from './pages/CoursesPage';
 import CourseDetailPage from './pages/CourseDetailPage';
 import LessonPage from './pages/LessonPage';
+
 import NotFoundPage from './pages/NotFound';
 import { useNavigate } from 'react-router-dom';
+
+import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminLayout from './components/admin/AdminLayout';
+import AdminCourses from './pages/admin/AdminCourses';
+import AdminClasses from './pages/admin/AdminClasses';
+import AdminUsers from './pages/admin/AdminUsers';
+import AdminSettings from './pages/admin/AdminSettings';
+import AdminCourseForm from './pages/admin/AdminCourseForm';
+import AdminTopicForm from './pages/admin/AdminTopicForm';
+import AdminLessonForm from './pages/admin/AdminLessonForm';
+
+import AdminUserInvite from './pages/admin/AdminUserInvite';
+import AdminClassForm from './pages/admin/AdminClassForm';
+
+
 
 // Error Boundary Component
 class ErrorBoundary extends React.Component<
@@ -353,6 +369,31 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+
+                <Route path="/admin/*" element={
+                  <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                    <Routes>
+                      <Route path="/" element={<AdminLayout><AdminDashboard /></AdminLayout>} />
+                      <Route path="/courses" element={<AdminLayout><AdminCourses /></AdminLayout>} />
+                      <Route path="/courses/new" element={<AdminLayout><AdminCourseForm /></AdminLayout>} />
+                      <Route path="/courses/:courseId" element={<AdminLayout><AdminCourseForm /></AdminLayout>} />
+                      <Route path="/courses/:courseId/topics/new" element={<AdminLayout><AdminTopicForm /></AdminLayout>} />
+                      <Route path="/courses/:courseId/topics/:topicId" element={<AdminLayout><AdminTopicForm /></AdminLayout>} />
+                      <Route path="/courses/:courseId/topics/:topicId/lessons/new" element={<AdminLayout><AdminLessonForm /></AdminLayout>} />
+                      <Route path="/courses/:courseId/topics/:topicId/lessons/:lessonId" element={<AdminLayout><AdminLessonForm /></AdminLayout>} />
+                      <Route path="/classes" element={<AdminLayout><AdminClasses /></AdminLayout>} />
+                      <Route path="/users" element={<AdminLayout><AdminUsers /></AdminLayout>} />
+                      <Route path="/settings" element={<AdminLayout><AdminSettings /></AdminLayout>} />
+                      <Route path="/users/invite" element={<AdminLayout><AdminUserInvite /></AdminLayout>} />
+                      <Route path="/classes/new" element={<AdminLayout><AdminClassForm /></AdminLayout>} />
+                      <Route path="/classes/:classId" element={<AdminLayout><AdminClassForm /></AdminLayout>} />
+                    </Routes>
+                  </ProtectedRoute>
+                } />
+
+
+
+
 
               {/* Standalone 404 (NOT wrapped in Layout) */}
               <Route path="*" element={<NotFoundPage />} />

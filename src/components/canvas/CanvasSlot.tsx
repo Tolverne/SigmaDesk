@@ -6,25 +6,17 @@ import {
   resolveCanvasViewForUser,
   ViewerRole,
   ResolvedCanvasView,
+  getTeacherExampleSessionIds,
 } from '../../services/canvasService';
-import CanvasWorkspace from './CanvasWorkspace';
+import CanvasViewer from './CanvasViewer';
 import StudentCanvasCarousel from './StudentCanvasCarousel';
 import { supabase } from '../../utils/supabase';
-
-// Old Start
-// (previously we only used CanvasWorkspace overlays for student@teacher_example)
-// Old End
-
-// New Start: merged playback (order-based) for teacher_example view
-import CanvasPlayback from './CanvasPlayback';
-import { getTeacherExampleSessionIds } from '../../services/canvasService';
-// New End
 
 type CanvasSlotProps = {
   className?: string;
   lessonId: string;
   slotIndex: number;
-  canvasType: CanvasType; // 'student' | 'teacher_example'
+  canvasType: CanvasType;
 };
 
 const roleFromString = (s?: string): ViewerRole => (s === 'teacher' ? 'teacher' : 'student');
@@ -42,15 +34,12 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
   const [errMsg, setErrMsg] = useState<string | null>(null);
 
   const viewerUserId = user?.id || '';
-
-  // Role resolution (AuthContext preferred; fallback to user_profiles)
   const [viewerRole, setViewerRole] = useState<ViewerRole>('student');
-
-  // New Start: list of ALL teacher_example sessions (for student merged playback)
+  
   const [teacherSessionIds, setTeacherSessionIds] = useState<string[] | null>(null);
   const [teacherSessionsLoading, setTeacherSessionsLoading] = useState<boolean>(false);
-  // New End
 
+  // Resolve user role
   useEffect(() => {
     let cancelled = false;
 
@@ -60,7 +49,7 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
         setErrMsg(null);
 
         if (!viewerUserId) {
-          console.warn('[CanvasSlot] No user session yet → defaulting role to student');
+          console.warn('[CanvasSlot] No user session, defaulting to student role');
           setViewerRole('student');
           return;
         }
@@ -74,7 +63,7 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
         if (cancelled) return;
 
         if (error) {
-          console.warn('[CanvasSlot] fetch role failed, defaulting student:', error.message);
+          console.warn('[CanvasSlot] Role fetch failed, defaulting to student:', error.message);
           setViewerRole('student');
         } else {
           setViewerRole(roleFromString(prof?.role));
@@ -90,7 +79,7 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
     };
   }, [viewerUserId]);
 
-  // Resolve what to render for this slot (single vs carousel + sessionId/readOnly)
+  // Resolve what to render
   useEffect(() => {
     let cancelled = false;
 
@@ -99,14 +88,14 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
         setLoading(true);
         setErrMsg(null);
 
-        if (!lessonId && !slotIndex) {
+        if (!lessonId || slotIndex == null) {
           setErrMsg('Invalid canvas slot');
           return;
         }
 
         const uid = viewerUserId || 'anonymous';
 
-        console.log('[CanvasSlot] Resolving view →', {
+        console.log('[CanvasSlot] Resolving view:', {
           lessonId,
           slotIndex,
           canvasType,
@@ -117,24 +106,23 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
         const v = await resolveCanvasViewForUser({
           lessonId,
           slotIndex,
-          canvasType,       // 'student' | 'teacher_example'
+          canvasType,
           viewerUserId: uid,
-          viewerRole,       // 'student' | 'teacher'
-          // Guard: don’t create a student session when viewing teacher_example
+          viewerRole,
           createIfMissing: !(viewerRole === 'student' && canvasType === 'teacher_example'),
         } as any);
 
         if (cancelled) return;
 
         if (!v) {
-          console.log('[CanvasSlot] No resolved view (likely no teacher board yet).');
+          console.log('[CanvasSlot] No resolved view');
           setView(null);
           return;
         }
 
         setView(v);
       } catch (e: any) {
-        console.error('[CanvasSlot] resolve failed:', e);
+        console.error('[CanvasSlot] Resolve failed:', e);
         setErrMsg(e?.message || 'Failed to prepare canvas');
       } finally {
         if (!cancelled) setLoading(false);
@@ -147,7 +135,7 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
     };
   }, [lessonId, slotIndex, canvasType, viewerUserId, viewerRole]);
 
-  // New Start: For student@teacher_example, fetch ALL teacher session IDs (for merged playback)
+  // For student@teacher_example, fetch ALL teacher session IDs
   useEffect(() => {
     let cancelled = false;
 
@@ -156,6 +144,7 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
         setTeacherSessionIds(null);
         return;
       }
+      
       try {
         setTeacherSessionsLoading(true);
         const ids = await getTeacherExampleSessionIds(lessonId, slotIndex);
@@ -171,11 +160,12 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
     };
 
     loadTeacherIds();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [viewerRole, canvasType, lessonId, slotIndex]);
-  // New End
 
-  // -------- UI states --------
+  // Loading state
   if (loading) {
     return (
       <div className={className}>
@@ -184,6 +174,7 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
     );
   }
 
+  // Error state
   if (errMsg) {
     return (
       <div className={className}>
@@ -192,6 +183,7 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
     );
   }
 
+  // No view
   if (!view) {
     return (
       <div className={className}>
@@ -200,7 +192,7 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
     );
   }
 
-  // Teacher review carousel (unchanged)
+  // Teacher reviewing students (carousel)
   if (view.kind !== 'single') {
     return (
       <div className={className}>
@@ -209,27 +201,13 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
     );
   }
 
-  // --- Single-session case ---------------------------------------------------
+  // Single session cases
   const sessionId = view.session?.id;
-  const sessionOwnerId = view.session?.user_id;
   const sessionType = (view.session as any)?.canvas_type as CanvasType | undefined;
+  const isTeacherExampleView = canvasType === 'teacher_example' || sessionType === 'teacher_example';
+  const enforcedReadOnly = view.readOnly || (viewerRole === 'student' && isTeacherExampleView);
 
-  const isTeacherExampleView =
-    canvasType === 'teacher_example' || sessionType === 'teacher_example';
-
-  // Enforce read-only if student looking at teacher_example
-  const enforcedReadOnly =
-    view.readOnly || (viewerRole === 'student' && isTeacherExampleView);
-
-  // Defensive logging if something unexpected slips through
-  if (viewerRole === 'student' && isTeacherExampleView && sessionOwnerId === viewerUserId) {
-    console.warn(
-      '[CanvasSlot] Student received own session for teacher_example. Refusing to allow edits.'
-    );
-  }
-
-  // Old Start: student@teacher_example → snapshot-only (final image)
-  /*
+  // Student viewing teacher example (merged playback)
   if (viewerRole === 'student' && isTeacherExampleView) {
     if (teacherSessionsLoading) {
       return (
@@ -239,22 +217,28 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
       );
     }
 
+    // Merged playback from all teacher sessions
     if (teacherSessionIds && teacherSessionIds.length) {
       return (
-        <CanvasPlayback
+        <CanvasViewer
           sessionIds={teacherSessionIds}
-          snapshot
-          className={`${className || ''} pointer-events-none`}
+          isReadOnly={true}
+          showModeToggle={true}
+          defaultMode="playback"
+          className={className}
         />
       );
     }
 
+    // Fallback: single teacher session
     if (sessionId) {
       return (
-        <CanvasPlayback
-          sessionIds={[sessionId]}
-          snapshot
-          className={`${className || ''} pointer-events-none`}
+        <CanvasViewer
+          sessionId={sessionId}
+          isReadOnly={true}
+          showModeToggle={true}
+          defaultMode="playback"
+          className={className}
         />
       );
     }
@@ -265,56 +249,16 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
       </div>
     );
   }
-  */
-  // Old End
 
-  // New Start: student@teacher_example → merged order-based playback (full image initially, with steps/sec control)
-  if (viewerRole === 'student' && isTeacherExampleView) {
-    if (teacherSessionsLoading) {
-      return (
-        <div className={className}>
-          <div className="text-sm text-gray-500 py-2">Loading teacher board…</div>
-        </div>
-      );
-    }
-
-    // Prefer merged playback from all teacher sessions
-    if (teacherSessionIds && teacherSessionIds.length) {
-      return (
-        <CanvasPlayback
-          sessionIds={teacherSessionIds}
-          initialFull
-          stepsPerSecond={40}
-          className={className}
-        />
-      );
-    }
-
-    // Fallback: playback from the resolver's single teacher session
-    if (sessionId) {
-      return (
-        <CanvasPlayback
-          sessionIds={[sessionId]}
-          initialFull
-          stepsPerSecond={40}
-          className={className}
-        />
-      );
-    }
-
-    // Nothing to show
-    return (
-      <div className={className}>
-        <div className="text-sm text-gray-500 py-2">Nothing to show here yet.</div>
-      </div>
-    );
-  }
-  // New End
-
-  // Default: single-session render (teacher @ teacher_example RW, student @ student RW)
+  // Default: single session with mode toggle
   return (
     <div className={className}>
-      <CanvasWorkspace sessionId={sessionId} isReadOnly={!!enforcedReadOnly} />
+      <CanvasViewer
+        sessionId={sessionId}
+        isReadOnly={!!enforcedReadOnly}
+        showModeToggle={true}
+        defaultMode="draw"
+      />
     </div>
   );
 };
