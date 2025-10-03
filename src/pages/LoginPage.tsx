@@ -6,18 +6,52 @@ import { supabase } from '../utils/supabase';
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const { user, loading } = useAuth();
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  // Prevent multiple navigations (from SIGNED_IN + hash handler + user effect)
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Prevent multiple navigations (SIGNED_IN + hash handler + user effect)
   const navigatedRef = useRef(false);
 
-  // 1) If already logged in (AuthProvider has a session), go to dashboard
-  useEffect(() => {
-    if (!loading && user && !navigatedRef.current) {
+  // Centralized post-login check: only allow active users to proceed
+  const checkActiveAndNavigate = async () => {
+    if (navigatedRef.current) return;
+
+    const { data: authUser } = await supabase.auth.getUser();
+    const uid = authUser?.user?.id;
+    if (!uid) return;
+
+    const { data: profile, error: profErr } = await supabase
+      .from('user_profiles')
+      .select('id, is_active')
+      .eq('id', uid)
+      .maybeSingle();
+
+    if (profErr) {
+      // Fall back to dashboard; RLS will still protect resources
+      console.warn('[Login] profile fetch failed; proceeding anyway:', profErr.message);
       navigatedRef.current = true;
       navigate('/dashboard', { replace: true });
+      return;
     }
-  }, [user, loading, navigate]);
+
+    if (!profile?.is_active) {
+      await supabase.auth.signOut();
+      setErrorMsg('Your account is not activated yet. Please ask an admin for an invite.');
+      return;
+    }
+
+    navigatedRef.current = true;
+    navigate('/dashboard', { replace: true });
+  };
+
+  // 1) If already logged in (AuthProvider has a session), check active → navigate
+  useEffect(() => {
+    if (!loading && user && !navigatedRef.current) {
+      checkActiveAndNavigate();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, loading]);
 
   // 2) Handle OAuth callback heuristics (implicit flow hash or PKCE code)
   useEffect(() => {
@@ -27,62 +61,46 @@ const LoginPage: React.FC = () => {
     const hasPkce = new URLSearchParams(search).has('code');
 
     if ((hasImplicit || hasPkce) && !navigatedRef.current) {
-      // Give Supabase a moment to finalize the session; then route
-      const t = setTimeout(async () => {
-        if (!navigatedRef.current) {
-          // Optionally confirm session presence (defensive)
-          try {
-            const { data } = await supabase.auth.getSession();
-            if (data?.session) {
-              navigatedRef.current = true;
-              navigate('/dashboard', { replace: true });
-            }
-          } catch {
-            // Even if the check fails, rely on AuthProvider's state change
-          }
-        }
+      const t = setTimeout(() => {
+        // After Supabase finalizes the session, run the same active check
+        checkActiveAndNavigate();
       }, 150);
       return () => clearTimeout(t);
     }
-  }, [navigate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // 3) As a backup: navigate on real-time auth state change while on this page
+  // 3) Backup: on real-time auth state change while on this page
   useEffect(() => {
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_IN' && !navigatedRef.current) {
-        navigatedRef.current = true;
-        navigate('/dashboard', { replace: true });
+        checkActiveAndNavigate();
       }
     });
     return () => {
       sub.subscription.unsubscribe();
     };
-  }, [navigate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleGoogleLogin = async () => {
     try {
       setIsLoggingIn(true);
-      console.log('Starting Google login...');
+      setErrorMsg(null);
 
-      // Keep your current behaviour: return to the site root after OAuth
-      // (Make sure this exact URL is allowed in your Supabase redirect settings.)
       const redirectTo = `${window.location.origin}/`;
-
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo,
           queryParams: { access_type: 'offline', prompt: 'consent' },
         },
       });
-
-      console.log('OAuth response:', { data, error, redirectTo });
       if (error) throw error;
-
-      // Note: Supabase will redirect the browser; code below may not run.
-    } catch (error) {
+      // Browser will redirect away; code after this typically won't run.
+    } catch (error: any) {
       console.error('Error during login:', error);
-      alert(`Login error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setErrorMsg(error?.message || 'Unknown login error.');
     } finally {
       setIsLoggingIn(false);
     }
@@ -104,11 +122,15 @@ const LoginPage: React.FC = () => {
       <div className="max-w-md w-full">
         <div className="bg-white rounded-lg shadow-xl p-8">
           <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-sigma-blue mb-2">
-              Σ SigmaDesk
-            </h1>
+            <h1 className="text-4xl font-bold text-sigma-blue mb-2">Σ SigmaDesk</h1>
             <p className="text-gray-600 italic">Where Every Step Counts</p>
           </div>
+
+          {errorMsg && (
+            <div className="mb-4 p-3 rounded bg-red-50 text-sm text-red-700 border border-red-200">
+              {errorMsg}
+            </div>
+          )}
 
           <button
             onClick={handleGoogleLogin}
@@ -129,7 +151,6 @@ const LoginPage: React.FC = () => {
             <p className="mt-2">Contact admin to change roles.</p>
           </div>
 
-          {/* Debug info - remove in production */}
           {process.env.NODE_ENV === 'development' && (
             <div className="mt-4 p-2 bg-gray-100 rounded text-xs text-gray-600">
               <p>Current origin: {window.location.origin}</p>

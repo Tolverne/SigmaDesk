@@ -8,15 +8,16 @@ import {
   ResolvedCanvasView,
   getTeacherExampleSessionIds,
 } from '../../services/canvasService';
-import CanvasViewer from './CanvasViewer';
+import CanvasWorkspace from './CanvasWorkspace';
 import StudentCanvasCarousel from './StudentCanvasCarousel';
+import CanvasPlayback from './CanvasPlayback';
 import { supabase } from '../../utils/supabase';
 
 type CanvasSlotProps = {
   className?: string;
   lessonId: string;
   slotIndex: number;
-  canvasType: CanvasType;
+  canvasType: CanvasType; // 'student' | 'teacher_example'
 };
 
 const roleFromString = (s?: string): ViewerRole => (s === 'teacher' ? 'teacher' : 'student');
@@ -28,125 +29,111 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
   canvasType,
 }) => {
   const { user } = useAuth();
+  const viewerUserId = user?.id || '';
 
+  // Role
+  const [viewerRole, setViewerRole] = useState<ViewerRole>('student');
+  const [roleLoading, setRoleLoading] = useState<boolean>(true);
+
+  // View
   const [view, setView] = useState<ResolvedCanvasView | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [viewLoading, setViewLoading] = useState<boolean>(true);
   const [errMsg, setErrMsg] = useState<string | null>(null);
 
-  const viewerUserId = user?.id || '';
-  const [viewerRole, setViewerRole] = useState<ViewerRole>('student');
-  
+  // Teacher sessions (for student@teacher_example)
   const [teacherSessionIds, setTeacherSessionIds] = useState<string[] | null>(null);
-  const [teacherSessionsLoading, setTeacherSessionsLoading] = useState<boolean>(false);
+  const [teacherIdsLoading, setTeacherIdsLoading] = useState<boolean>(false);
 
-  // Resolve user role
+  // (Optional) course id (used by the carousel if present; the carousel can also resolve it)
+  const [courseId, setCourseId] = useState<string | null>(null);
+
+  // 1) Resolve viewer role
   useEffect(() => {
     let cancelled = false;
-
-    const resolveRole = async () => {
+    (async () => {
       try {
-        setLoading(true);
-        setErrMsg(null);
-
+        setRoleLoading(true);
         if (!viewerUserId) {
-          console.warn('[CanvasSlot] No user session, defaulting to student role');
           setViewerRole('student');
           return;
         }
-
-        const { data: prof, error } = await supabase
+        const { data, error } = await supabase
           .from('user_profiles')
           .select('role')
           .eq('id', viewerUserId)
           .maybeSingle();
-
         if (cancelled) return;
-
-        if (error) {
-          console.warn('[CanvasSlot] Role fetch failed, defaulting to student:', error.message);
-          setViewerRole('student');
-        } else {
-          setViewerRole(roleFromString(prof?.role));
-        }
+        if (error) setViewerRole('student');
+        else setViewerRole(roleFromString(data?.role));
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setRoleLoading(false);
       }
-    };
-
-    resolveRole();
-    return () => {
-      cancelled = true;
-    };
+    })();
+    return () => { cancelled = true; };
   }, [viewerUserId]);
 
-  // Resolve what to render
+  // 2) Resolve what to render (single vs carousel)
   useEffect(() => {
     let cancelled = false;
-
-    const run = async () => {
+    (async () => {
       try {
-        setLoading(true);
+        setViewLoading(true);
         setErrMsg(null);
 
-        if (!lessonId || slotIndex == null) {
-          setErrMsg('Invalid canvas slot');
-          return;
-        }
-
         const uid = viewerUserId || 'anonymous';
-
-        console.log('[CanvasSlot] Resolving view:', {
-          lessonId,
-          slotIndex,
-          canvasType,
-          viewerUserId: uid,
-          viewerRole,
-        });
-
         const v = await resolveCanvasViewForUser({
           lessonId,
           slotIndex,
           canvasType,
           viewerUserId: uid,
           viewerRole,
-          createIfMissing: !(viewerRole === 'student' && canvasType === 'teacher_example'),
         } as any);
 
         if (cancelled) return;
-
-        if (!v) {
-          console.log('[CanvasSlot] No resolved view');
-          setView(null);
-          return;
-        }
-
-        setView(v);
+        setView(v || null);
       } catch (e: any) {
-        console.error('[CanvasSlot] Resolve failed:', e);
-        setErrMsg(e?.message || 'Failed to prepare canvas');
+        if (!cancelled) {
+          console.error('[CanvasSlot] resolve failed:', e);
+          setErrMsg(e?.message || 'Failed to prepare canvas');
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setViewLoading(false);
       }
-    };
-
-    if (viewerRole) run();
-    return () => {
-      cancelled = true;
-    };
+    })();
+    return () => { cancelled = true; };
   }, [lessonId, slotIndex, canvasType, viewerUserId, viewerRole]);
 
-  // For student@teacher_example, fetch ALL teacher session IDs
+  // 3) Optional: resolve course for this lesson (via topics). Carousel can also do this itself.
   useEffect(() => {
     let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('lessons')
+          .select('topic_id, topics ( course_id )')
+          .eq('id', lessonId)
+          .maybeSingle();
+        if (!cancelled) {
+          if (error) setCourseId(null);
+          else setCourseId((data as any)?.topics?.course_id ?? null);
+        }
+      } catch {
+        if (!cancelled) setCourseId(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [lessonId]);
 
-    const loadTeacherIds = async () => {
-      if (viewerRole !== 'student' || canvasType !== 'teacher_example') {
+  // 4) Teacher sessions for student@teacher_example
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!(viewerRole === 'student' && canvasType === 'teacher_example')) {
         setTeacherSessionIds(null);
         return;
       }
-      
       try {
-        setTeacherSessionsLoading(true);
+        setTeacherIdsLoading(true);
         const ids = await getTeacherExampleSessionIds(lessonId, slotIndex);
         if (!cancelled) setTeacherSessionIds(ids.length ? ids : null);
       } catch (e: any) {
@@ -155,110 +142,64 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
           setTeacherSessionIds(null);
         }
       } finally {
-        if (!cancelled) setTeacherSessionsLoading(false);
+        if (!cancelled) setTeacherIdsLoading(false);
       }
-    };
-
-    loadTeacherIds();
-    return () => {
-      cancelled = true;
-    };
+    })();
+    return () => { cancelled = true; };
   }, [viewerRole, canvasType, lessonId, slotIndex]);
 
-  // Loading state
-  if (loading) {
-    return (
-      <div className={className}>
-        <div className="text-sm text-gray-500 py-2">Preparing Canvas…</div>
-      </div>
-    );
+  // -------- UI states --------
+  if (roleLoading || viewLoading) {
+    return <div className={className}><div className="text-sm text-gray-500 py-2">Preparing Canvas…</div></div>;
   }
-
-  // Error state
   if (errMsg) {
-    return (
-      <div className={className}>
-        <div className="text-sm text-red-600 py-2">Canvas failed to load: {errMsg}</div>
-      </div>
-    );
+    return <div className={className}><div className="text-sm text-red-600 py-2">Canvas failed to load: {errMsg}</div></div>;
   }
-
-  // No view
   if (!view) {
-    return (
-      <div className={className}>
-        <div className="text-sm text-gray-500 py-2">Nothing to show here yet.</div>
-      </div>
-    );
+    return <div className={className}><div className="text-sm text-gray-500 py-2">Nothing to show here yet.</div></div>;
   }
 
-  // Teacher reviewing students (carousel)
+  // Teacher review → carousel
   if (view.kind !== 'single') {
     return (
       <div className={className}>
-        <StudentCanvasCarousel sessions={view.sessions} />
+        <StudentCanvasCarousel
+          sessions={view.sessions}
+          lessonId={lessonId}
+          slotIndex={slotIndex}
+          courseId={courseId ?? undefined}
+        />
       </div>
     );
   }
 
-  // Single session cases
+  // Single-session case
   const sessionId = view.session?.id;
   const sessionType = (view.session as any)?.canvas_type as CanvasType | undefined;
-  const isTeacherExampleView = canvasType === 'teacher_example' || sessionType === 'teacher_example';
-  const enforcedReadOnly = view.readOnly || (viewerRole === 'student' && isTeacherExampleView);
 
-  // Student viewing teacher example (merged playback)
+  const isTeacherExampleView =
+    canvasType === 'teacher_example' || sessionType === 'teacher_example';
+
+  const enforcedReadOnly =
+    view.readOnly || (viewerRole === 'student' && isTeacherExampleView);
+
   if (viewerRole === 'student' && isTeacherExampleView) {
-    if (teacherSessionsLoading) {
-      return (
-        <div className={className}>
-          <div className="text-sm text-gray-500 py-2">Loading teacher board…</div>
-        </div>
-      );
+    if (teacherIdsLoading) {
+      return <div className={className}><div className="text-sm text-gray-500 py-2">Loading teacher board…</div></div>;
     }
-
-    // Merged playback from all teacher sessions
     if (teacherSessionIds && teacherSessionIds.length) {
-      return (
-        <CanvasViewer
-          sessionIds={teacherSessionIds}
-          isReadOnly={true}
-          showModeToggle={true}
-          defaultMode="playback"
-          className={className}
-        />
-      );
+      return <CanvasPlayback sessionIds={teacherSessionIds} className={`${className || ''} pointer-events-none`} initialFull />;
     }
-
-    // Fallback: single teacher session
     if (sessionId) {
-      return (
-        <CanvasViewer
-          sessionId={sessionId}
-          isReadOnly={true}
-          showModeToggle={true}
-          defaultMode="playback"
-          className={className}
-        />
-      );
+      return <CanvasPlayback sessionIds={[sessionId]} className={`${className || ''} pointer-events-none`} initialFull />;
     }
-
-    return (
-      <div className={className}>
-        <div className="text-sm text-gray-500 py-2">Nothing to show here yet.</div>
-      </div>
-    );
+    return <div className={className}><div className="text-sm text-gray-500 py-2">Nothing to show here yet.</div></div>;
   }
 
-  // Default: single session with mode toggle
+  // Default: live canvas
   return (
     <div className={className}>
-      <CanvasViewer
-        sessionId={sessionId}
-        isReadOnly={!!enforcedReadOnly}
-        showModeToggle={true}
-        defaultMode="draw"
-      />
+      <CanvasWorkspace sessionId={sessionId!} isReadOnly={!!enforcedReadOnly} />
     </div>
   );
 };

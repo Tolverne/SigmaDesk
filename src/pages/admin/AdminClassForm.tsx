@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+// src/pages/admin/AdminClassForm.tsx
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../utils/supabase';
@@ -16,6 +17,17 @@ interface User {
   role: string;
 }
 
+// Raw enrollment row as returned by Supabase (user_profiles can be an array or object)
+interface EnrollmentRow {
+  id: string;
+  user_id: string;
+  user_profiles:
+    | { full_name: string; email: string }
+    | { full_name: string; email: string }[]
+    | null;
+}
+
+// Normalized enrollment shape for our UI (single object)
 interface Enrollment {
   id: string;
   user_id: string;
@@ -25,20 +37,30 @@ interface Enrollment {
   };
 }
 
+type CourseEnrollmentMap = Record<string, { class_id: string; class_name: string }>;
+
+function firstNameFromFullName(full_name?: string): string {
+  if (!full_name) return '';
+  const parts = full_name.trim().split(/\s+/);
+  return parts[0] || '';
+}
+
 const AdminClassForm: React.FC = () => {
   const { classId } = useParams<{ classId: string }>();
   const { profile } = useAuth();
   const navigate = useNavigate();
-  
+
   const [formData, setFormData] = useState({
     name: '',
     display_name: '',
     course_id: '',
   });
+
   const [courses, setCourses] = useState<Course[]>([]);
   const [teachers, setTeachers] = useState<User[]>([]);
   const [students, setStudents] = useState<User[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [courseEnrollments, setCourseEnrollments] = useState<CourseEnrollmentMap>({});
   const [selectedStudent, setSelectedStudent] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -48,25 +70,28 @@ const AdminClassForm: React.FC = () => {
   useEffect(() => {
     loadCourses();
     loadUsers();
+  }, [profile?.organization_id]);
+
+  useEffect(() => {
     if (classId) {
-      loadClass();
-      loadEnrollments();
+      loadClass().then(() => {
+        loadEnrollments();
+        loadCourseEnrollments(); // depends on formData.course_id (set by loadClass)
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [classId]);
 
   const loadCourses = async () => {
     if (!profile?.organization_id) return;
-
     try {
       const { data, error } = await supabase
         .from('courses')
         .select('id, title')
         .eq('organization_id', profile.organization_id)
         .order('title');
-
       if (error) throw error;
-      setCourses((data || []).map((c: any) => ({ id: String(c.id), title: String(c.title ?? '') })));
+      setCourses(data || []);
     } catch (err: any) {
       console.error('Error loading courses:', err);
     }
@@ -74,25 +99,15 @@ const AdminClassForm: React.FC = () => {
 
   const loadUsers = async () => {
     if (!profile?.organization_id) return;
-
     try {
       const { data, error } = await supabase
         .from('user_profiles')
         .select('id, full_name, email, role')
         .eq('organization_id', profile.organization_id)
         .order('full_name');
-
       if (error) throw error;
-      
-      const list = (data || []).map((u: any) => ({
-        id: String(u.id),
-        full_name: String(u.full_name ?? ''),
-        email: String(u.email ?? ''),
-        role: String(u.role ?? ''),
-      })) as User[];
-
-      setTeachers(list.filter(u => u.role === 'teacher'));
-      setStudents(list.filter(u => u.role === 'student'));
+      setTeachers((data || []).filter(u => u.role === 'teacher'));
+      setStudents((data || []).filter(u => u.role === 'student'));
     } catch (err: any) {
       console.error('Error loading users:', err);
     }
@@ -100,7 +115,6 @@ const AdminClassForm: React.FC = () => {
 
   const loadClass = async () => {
     if (!classId) return;
-
     try {
       setLoading(true);
       const { data, error } = await supabase
@@ -110,11 +124,11 @@ const AdminClassForm: React.FC = () => {
         .single();
 
       if (error) throw error;
-      
+
       setFormData({
-        name: String(data.name ?? ''),
-        display_name: String(data.display_name ?? ''),
-        course_id: String(data.course_id ?? ''),
+        name: data.name,
+        display_name: data.display_name || '',
+        course_id: data.course_id,
       });
     } catch (err: any) {
       console.error('Error loading class:', err);
@@ -124,42 +138,85 @@ const AdminClassForm: React.FC = () => {
     }
   };
 
-  const loadEnrollments = async () => {
+  // Enrollments for THIS class (robust: normalize arrays/objects + fallback to 2-step fetch)
+    const loadEnrollments = async () => {
     if (!classId) return;
 
+    try {
+        // Step 1: get enrollment rows for this class (no nested joins)
+        const { data: rows, error } = await supabase
+        .from('enrollments')
+        .select('id, user_id') // minimal fields → friendlier to RLS
+        .eq('class_id', classId);
+
+        if (error) throw error;
+
+        if (!rows || rows.length === 0) {
+        setEnrollments([]);
+        return;
+        }
+
+        // Step 2: fetch profiles for those user IDs and merge
+        const ids = Array.from(new Set(rows.map((r: any) => r.user_id))).filter(Boolean) as string[];
+        let profilesMap: Record<string, { full_name: string; email: string }> = {};
+
+        if (ids.length > 0) {
+        const { data: profs, error: profErr } = await supabase
+            .from('user_profiles')
+            .select('id, full_name, email')
+            .in('id', ids);
+
+        if (profErr) {
+            console.warn('[AdminClassForm] profiles fetch failed:', profErr.message);
+        } else if (profs) {
+            profilesMap = (profs as any[]).reduce((acc, p) => {
+            acc[p.id] = { full_name: p.full_name || '', email: p.email || '' };
+            return acc;
+            }, {} as Record<string, { full_name: string; email: string }>);
+        }
+        }
+
+        const normalized = (rows || []).map((r: any) => ({
+        id: r.id,
+        user_id: r.user_id,
+        user_profiles: profilesMap[r.user_id] || { full_name: '', email: '' },
+        }));
+
+        setEnrollments(normalized);
+    } catch (err: any) {
+        console.error('Error loading enrollments:', err);
+        // keep current UI state; optionally surface an alert
+    }
+    };
+
+
+  // Enrollments for THIS COURSE across ANY class (for “move” UX)
+  const loadCourseEnrollments = async () => {
+    if (!formData.course_id) return;
     try {
       const { data, error } = await supabase
         .from('enrollments')
         .select(`
-          id,
           user_id,
-          user_profiles (
-            full_name,
-            email
+          class_id,
+          classes (
+            name,
+            display_name
           )
         `)
-        .eq('class_id', classId);
+        .eq('course_id', formData.course_id);
 
       if (error) throw error;
 
-      // Normalize nested profile to an object (handle array/object both)
-      const normalized = (data || []).map((row: any) => {
-        const up = Array.isArray(row.user_profiles)
-          ? row.user_profiles[0] ?? {}
-          : row.user_profiles ?? {};
-        return {
-          id: String(row.id),
-          user_id: String(row.user_id),
-          user_profiles: {
-            full_name: String(up.full_name ?? ''),
-            email: String(up.email ?? ''),
-          },
-        } as Enrollment;
+      const map: CourseEnrollmentMap = {};
+      (data || []).forEach((row: any) => {
+        const cls = Array.isArray(row.classes) ? row.classes[0] : row.classes;
+        const className = cls?.display_name || cls?.name || 'Unknown class';
+        map[row.user_id] = { class_id: row.class_id, class_name: className };
       });
-
-      setEnrollments(normalized);
+      setCourseEnrollments(map);
     } catch (err: any) {
-      console.error('Error loading enrollments:', err);
+      console.error('Error loading course enrollments:', err);
     }
   };
 
@@ -170,7 +227,6 @@ const AdminClassForm: React.FC = () => {
       alert('Please fill in all required fields');
       return;
     }
-
     if (!profile?.organization_id) {
       alert('No organization found');
       return;
@@ -182,25 +238,17 @@ const AdminClassForm: React.FC = () => {
       if (isEdit && classId) {
         const { error } = await supabase
           .from('classes')
-          .update({
-            name: formData.name,
-            display_name: formData.display_name || null,
-            // course_id is disabled in edit mode — do not override here
-          })
+          .update(formData)
           .eq('id', classId);
-
         if (error) throw error;
         alert('Class updated successfully');
       } else {
         const { error } = await supabase
           .from('classes')
           .insert({
-            name: formData.name,
-            display_name: formData.display_name || null,
-            course_id: formData.course_id,
+            ...formData,
             organization_id: profile.organization_id,
           });
-
         if (error) throw error;
         alert('Class created successfully');
         navigate('/admin/classes');
@@ -217,19 +265,46 @@ const AdminClassForm: React.FC = () => {
     if (!selectedStudent || !classId || !formData.course_id) return;
 
     try {
+      // Check if student already enrolled in this course
+      const { data: existing, error: existingErr } = await supabase
+        .from('enrollments')
+        .select(`
+          id,
+          class_id,
+          classes (
+            name,
+            display_name
+          )
+        `)
+        .eq('user_id', selectedStudent)
+        .eq('course_id', formData.course_id)
+        .maybeSingle();
+
+      if (existingErr && (existingErr as any).code !== 'PGRST116') throw existingErr;
+
+      if (existing?.id && existing.class_id !== classId) {
+        const cls = Array.isArray(existing.classes) ? existing.classes[0] : existing.classes;
+        const oldName = cls?.display_name || cls?.name || 'another class';
+        const ok = window.confirm(
+          `This student is already enrolled in "${oldName}" for this course.\n\nMove them to the current class?`
+        );
+        if (!ok) return;
+      }
+
+      // UPSERT on (user_id, course_id): insert or MOVE the student to this class
       const { error } = await supabase
         .from('enrollments')
-        .insert({
-          user_id: selectedStudent,
-          course_id: formData.course_id,
-          class_id: classId,
-        });
+        .upsert(
+          [{ user_id: selectedStudent, course_id: formData.course_id, class_id: classId }],
+          { onConflict: 'user_id,course_id' }
+        );
 
       if (error) throw error;
-      
+
       setSelectedStudent('');
       await loadEnrollments();
-      alert('Student enrolled successfully');
+      await loadCourseEnrollments();
+      alert(existing?.id ? 'Student moved to this class.' : 'Student enrolled successfully.');
     } catch (err: any) {
       alert(`Failed to enroll student: ${err.message}`);
     }
@@ -239,21 +314,31 @@ const AdminClassForm: React.FC = () => {
     if (!window.confirm('Are you sure you want to remove this student from the class?')) {
       return;
     }
-
     try {
       const { error } = await supabase
         .from('enrollments')
         .delete()
         .eq('id', enrollmentId);
-
       if (error) throw error;
-      
-      setEnrollments((prev) => prev.filter(e => e.id !== enrollmentId));
+      setEnrollments(enrollments.filter(e => e.id !== enrollmentId));
+      await loadCourseEnrollments();
       alert('Student removed successfully');
     } catch (err: any) {
       alert(`Failed to remove student: ${err.message}`);
     }
   };
+
+  // Build options for the student dropdown with helpful annotations
+  const studentOptions = useMemo(() => {
+    return students.map((s) => {
+      const ce = courseEnrollments[s.id];
+      const alreadyInThisClass = ce?.class_id === classId;
+      const label = ce
+        ? `${s.full_name} (${s.email}) — currently in ${ce.class_name}`
+        : `${s.full_name} (${s.email})`;
+      return { value: s.id, label, disabled: alreadyInThisClass };
+    });
+  }, [students, courseEnrollments, classId]);
 
   if (loading) {
     return (
@@ -286,7 +371,7 @@ const AdminClassForm: React.FC = () => {
       <form onSubmit={handleSubmit} className="space-y-6 mb-8">
         <div className="bg-white border border-gray-200 rounded-lg p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Class Details</h2>
-          
+
           <div className="space-y-4">
             <div>
               <label htmlFor="course_id" className="block text-sm font-medium text-gray-700 mb-2">
@@ -295,7 +380,12 @@ const AdminClassForm: React.FC = () => {
               <select
                 id="course_id"
                 value={formData.course_id}
-                onChange={(e) => setFormData({ ...formData, course_id: e.target.value })}
+                onChange={(e) => {
+                  setFormData({ ...formData, course_id: e.target.value });
+                  setCourseEnrollments({});
+                  setSelectedStudent('');
+                  if (classId) setTimeout(loadCourseEnrollments, 0);
+                }}
                 className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-sigma-blue focus:border-transparent"
                 required
                 disabled={isEdit}
@@ -334,7 +424,7 @@ const AdminClassForm: React.FC = () => {
 
             <div>
               <label htmlFor="display_name" className="block text-sm font-medium text-gray-700 mb-2">
-                Display Name
+              Display Name
               </label>
               <input
                 type="text"
@@ -375,7 +465,7 @@ const AdminClassForm: React.FC = () => {
       {isEdit && classId && (
         <div className="bg-white border border-gray-200 rounded-lg p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Student Enrollments</h2>
-          
+
           {/* Add Student */}
           <div className="flex gap-2 mb-6">
             <select
@@ -384,17 +474,15 @@ const AdminClassForm: React.FC = () => {
               className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-sigma-blue focus:border-transparent"
             >
               <option value="">Select a student to enroll...</option>
-              {students
-                .filter(s => !enrollments.some(e => e.user_id === s.id))
-                .map(student => (
-                  <option key={student.id} value={student.id}>
-                    {student.full_name} ({student.email})
-                  </option>
-                ))}
+              {studentOptions.map(opt => (
+                <option key={opt.value} value={opt.value} disabled={opt.disabled}>
+                  {opt.label}
+                </option>
+              ))}
             </select>
             <button
               onClick={handleEnrollStudent}
-              disabled={!selectedStudent}
+              disabled={!selectedStudent || !formData.course_id}
               className="flex items-center px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Plus className="w-5 h-5 mr-2" />
@@ -405,32 +493,35 @@ const AdminClassForm: React.FC = () => {
           {/* Enrolled Students List */}
           {enrollments.length === 0 ? (
             <div className="text-center py-8 bg-gray-50 rounded-lg">
-              <p className="text-gray-600">No students enrolled yet</p>
+              <p className="text-gray-600">No students enrolled in this class yet</p>
             </div>
           ) : (
             <div className="space-y-2">
-              {enrollments.map((enrollment) => (
-                <div
-                  key={enrollment.id}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                >
-                  <div>
-                    <p className="font-medium text-gray-900">
-                      {enrollment.user_profiles.full_name}
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      {enrollment.user_profiles.email}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => handleUnenrollStudent(enrollment.id)}
-                    className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                    title="Remove from class"
+              {enrollments.map((enrollment) => {
+                const first = firstNameFromFullName(enrollment.user_profiles.full_name);
+                return (
+                  <div
+                    key={enrollment.id}
+                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
                   >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-              ))}
+                    <div>
+                      <p className="font-medium text-gray-900">
+                        {first || enrollment.user_profiles.full_name || '—'}
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        {enrollment.user_profiles.email}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleUnenrollStudent(enrollment.id)}
+                      className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                      title="Remove from class"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

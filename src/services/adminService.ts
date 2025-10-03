@@ -24,6 +24,36 @@ export interface CreateLessonData {
   display_order: number;
 }
 
+export type AdminRole = 'admin' | 'teacher' | 'student';
+
+export async function listUsersInOrg(orgId: string) {
+  const { data, error } = await supabase
+    .from('user_profiles')
+    .select('id, full_name, email, role, is_active')
+    .eq('organization_id', orgId)
+    .order('full_name');
+  if (error) throw error;
+  return data || [];
+}
+
+export async function updateUserRole(userId: string, role: AdminRole) {
+  const { error } = await supabase
+    .from('user_profiles')
+    .update({ role })
+    .eq('id', userId);
+  if (error) throw error;
+}
+
+export async function setUserActive(userId: string, isActive: boolean) {
+  const { error } = await supabase
+    .from('user_profiles')
+    .update({ is_active: isActive })
+    .eq('id', userId);
+  if (error) throw error;
+}
+
+
+
 export const adminService = {
   // ==================== COURSES ====================
   
@@ -38,6 +68,9 @@ export const adminService = {
     return data;
   },
 
+
+
+  
   async getCourse(courseId: string) {
     const { data, error } = await supabase
       .from('courses')
