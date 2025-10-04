@@ -6,6 +6,7 @@
     canvas_width: number;
     canvas_height: number;
     slot_index: number;          // NEW: identifies which \workskip this session belongs to
+    class_id: string | null;
     created_at: string;
     updated_at: string;
   }
@@ -52,7 +53,7 @@
     visibleStrokes: CanvasStroke[];
   }
   
-  export type CanvasType = 'student' | 'teacher_example';
+  export type CanvasType = 'student' | 'class';
 
 
   export const STUDENT_COLORS = [

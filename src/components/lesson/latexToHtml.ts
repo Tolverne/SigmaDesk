@@ -221,7 +221,7 @@ export function splitIntoSections(raw: string): Section[] {
 
     // canvas mount points
     .replace(/\\workskip/g, '<div data-canvas="student"></div>')
-    .replace(/\\bigskip/g,  '<div data-canvas="teacher"></div>');
+    .replace(/\\bigskip/g,  '<div data-canvas="class"></div>');
 
   // split on \section{Title}
   const chunks = src.split(/\\section\{([^}]+)\}/g); // ['', title1, body1, title2, body2, ...]

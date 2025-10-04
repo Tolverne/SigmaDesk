@@ -6,7 +6,8 @@ import {
   resolveCanvasViewForUser,
   ViewerRole,
   ResolvedCanvasView,
-  getTeacherExampleSessionIds,
+  getClassCanvasSessionIds,
+  getClassIdForLessonAndUser,
 } from '../../services/canvasService';
 import CanvasWorkspace from './CanvasWorkspace';
 import StudentCanvasCarousel from './StudentCanvasCarousel';
@@ -17,7 +18,8 @@ type CanvasSlotProps = {
   className?: string;
   lessonId: string;
   slotIndex: number;
-  canvasType: CanvasType; // 'student' | 'teacher_example'
+  canvasType: CanvasType; // 'student' | 'class'
+  classId?: string; // Optional: if provided, use this class; otherwise auto-resolve
 };
 
 const roleFromString = (s?: string): ViewerRole => (s === 'teacher' ? 'teacher' : 'student');
@@ -27,6 +29,7 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
   lessonId,
   slotIndex,
   canvasType,
+  classId: providedClassId,
 }) => {
   const { user } = useAuth();
   const viewerUserId = user?.id || '';
@@ -35,14 +38,18 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
   const [viewerRole, setViewerRole] = useState<ViewerRole>('student');
   const [roleLoading, setRoleLoading] = useState<boolean>(true);
 
+  // Resolved class ID (either provided or auto-resolved)
+  const [resolvedClassId, setResolvedClassId] = useState<string | null>(null);
+  const [classIdLoading, setClassIdLoading] = useState<boolean>(false);
+
   // View
   const [view, setView] = useState<ResolvedCanvasView | null>(null);
   const [viewLoading, setViewLoading] = useState<boolean>(true);
   const [errMsg, setErrMsg] = useState<string | null>(null);
 
-  // Teacher sessions (for student@teacher_example)
-  const [teacherSessionIds, setTeacherSessionIds] = useState<string[] | null>(null);
-  const [teacherIdsLoading, setTeacherIdsLoading] = useState<boolean>(false);
+  // Class canvas sessions (for student viewing class canvas)
+  const [classSessionIds, setClassSessionIds] = useState<string[] | null>(null);
+  const [classIdsLoading, setClassIdsLoading] = useState<boolean>(false);
 
   // (Optional) course id (used by the carousel if present; the carousel can also resolve it)
   const [courseId, setCourseId] = useState<string | null>(null);
@@ -72,7 +79,50 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
     return () => { cancelled = true; };
   }, [viewerUserId]);
 
-  // 2) Resolve what to render (single vs carousel)
+  // 2) Resolve class ID if not provided and canvasType is 'class'
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      // If classId is explicitly provided, use it
+      if (providedClassId) {
+        setResolvedClassId(providedClassId);
+        return;
+      }
+
+      // Only auto-resolve for class canvases
+      if (canvasType !== 'class') {
+        setResolvedClassId(null);
+        return;
+      }
+
+      // Need role and userId to resolve
+      if (roleLoading || !viewerUserId) {
+        return;
+      }
+
+      try {
+        setClassIdLoading(true);
+        const classId = await getClassIdForLessonAndUser(
+          lessonId,
+          viewerUserId,
+          viewerRole
+        );
+        if (!cancelled) {
+          setResolvedClassId(classId);
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          console.warn('[CanvasSlot] Failed to resolve classId:', e?.message || e);
+          setResolvedClassId(null);
+        }
+      } finally {
+        if (!cancelled) setClassIdLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [providedClassId, canvasType, lessonId, viewerUserId, viewerRole, roleLoading]);
+
+  // 3) Resolve what to render (single vs carousel)
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -87,7 +137,8 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
           canvasType,
           viewerUserId: uid,
           viewerRole,
-        } as any);
+          classId: resolvedClassId ?? undefined,
+        });
 
         if (cancelled) return;
         setView(v || null);
@@ -101,9 +152,9 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
       }
     })();
     return () => { cancelled = true; };
-  }, [lessonId, slotIndex, canvasType, viewerUserId, viewerRole]);
+  }, [lessonId, slotIndex, canvasType, viewerUserId, viewerRole, resolvedClassId]);
 
-  // 3) Optional: resolve course for this lesson (via topics). Carousel can also do this itself.
+  // 4) Optional: resolve course for this lesson (via topics). Carousel can also do this itself.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -124,32 +175,31 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
     return () => { cancelled = true; };
   }, [lessonId]);
 
-  // 4) Teacher sessions for student@teacher_example
+  // 5) Class canvas sessions for student viewing class canvas
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!(viewerRole === 'student' && canvasType === 'teacher_example')) {
-        setTeacherSessionIds(null);
+      if (!(viewerRole === 'student' && canvasType === 'class')) {
+        setClassSessionIds(null);
         return;
       }
       try {
-        setTeacherIdsLoading(true);
-        const ids = await getTeacherExampleSessionIds(lessonId, slotIndex);
-        if (!cancelled) setTeacherSessionIds(ids.length ? ids : null);
+        setClassIdsLoading(true);
+        const ids = await getClassCanvasSessionIds(lessonId, slotIndex, resolvedClassId ?? undefined);
+        if (!cancelled) setClassSessionIds(ids.length ? ids : null);
       } catch (e: any) {
         if (!cancelled) {
-          console.warn('[CanvasSlot] getTeacherExampleSessionIds failed:', e?.message || e);
-          setTeacherSessionIds(null);
+          console.warn('[CanvasSlot] getClassCanvasSessionIds failed:', e?.message || e);
+          setClassSessionIds(null);
         }
       } finally {
-        if (!cancelled) setTeacherIdsLoading(false);
+        if (!cancelled) setClassIdsLoading(false);
       }
     })();
-    return () => { cancelled = true; };
-  }, [viewerRole, canvasType, lessonId, slotIndex]);
+  }, [viewerRole, canvasType, lessonId, slotIndex, resolvedClassId]);
 
   // -------- UI states --------
-  if (roleLoading || viewLoading) {
+  if (roleLoading || viewLoading || classIdLoading) {
     return <div className={className}><div className="text-sm text-gray-500 py-2">Preparing Canvas…</div></div>;
   }
   if (errMsg) {
@@ -177,18 +227,18 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
   const sessionId = view.session?.id;
   const sessionType = (view.session as any)?.canvas_type as CanvasType | undefined;
 
-  const isTeacherExampleView =
-    canvasType === 'teacher_example' || sessionType === 'teacher_example';
+  const isClassCanvasView =
+    canvasType === 'class' || sessionType === 'class';
 
   const enforcedReadOnly =
-    view.readOnly || (viewerRole === 'student' && isTeacherExampleView);
+    view.readOnly || (viewerRole === 'student' && isClassCanvasView);
 
-  if (viewerRole === 'student' && isTeacherExampleView) {
-    if (teacherIdsLoading) {
-      return <div className={className}><div className="text-sm text-gray-500 py-2">Loading teacher board…</div></div>;
+  if (viewerRole === 'student' && isClassCanvasView) {
+    if (classIdsLoading) {
+      return <div className={className}><div className="text-sm text-gray-500 py-2">Loading class board…</div></div>;
     }
-    if (teacherSessionIds && teacherSessionIds.length) {
-      return <CanvasPlayback sessionIds={teacherSessionIds} className={`${className || ''} pointer-events-none`} initialFull />;
+    if (classSessionIds && classSessionIds.length) {
+      return <CanvasPlayback sessionIds={classSessionIds} className={`${className || ''} pointer-events-none`} initialFull />;
     }
     if (sessionId) {
       return <CanvasPlayback sessionIds={[sessionId]} className={`${className || ''} pointer-events-none`} initialFull />;

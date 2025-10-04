@@ -370,30 +370,235 @@ export type ResolvedCanvasView =
   | { kind: 'carousel'; sessions: (CanvasSession & { user_name: string })[]; readOnly: boolean };
 
 // NEW: normalize teacher type label (your DB might use 'teacher' or 'teacher_example')
-const isTeacherType = (t?: string) => t === 'teacher' || t === 'teacher_example';
+const isTeacherType = (t?: string) => t === 'teacher' || t === 'class';
 // New Start: canonical label we will write/query for teacher boards
-const TEACHER_TYPE_DB: CanvasType = 'teacher_example';
+const TEACHER_TYPE_DB: CanvasType = 'class';
 // New End
 
 // NEW: get teacher session for a slot (pick the most recently updated one)
-async function getLatestTeacherSessionForSlot(lessonId: string, slotIndex: number): Promise<CanvasSession | null> {
-  console.log('[resolver] getLatestTeacherSessionForSlot', { lessonId, slotIndex, type: TEACHER_TYPE_DB });
-  const { data, error } = await supabase
+async function getLatestClassSessionForSlot(
+  lessonId: string, 
+  slotIndex: number,
+  classId?: string
+): Promise<CanvasSession | null> {
+  console.log('[resolver] getLatestClassSessionForSlot', { lessonId, slotIndex, classId, type: TEACHER_TYPE_DB });
+  
+  let query = supabase
     .from('canvas_sessions')
     .select('*')
     .eq('lesson_id', lessonId)
     .eq('slot_index', slotIndex)
-    .eq('canvas_type', TEACHER_TYPE_DB)
+    .eq('canvas_type', TEACHER_TYPE_DB);
+  
+  // If classId provided, filter by it; otherwise get the most recent one
+  if (classId) {
+    query = query.eq('class_id', classId);
+  }
+  
+  const { data, error } = await query
     .order('updated_at', { ascending: false })
     .limit(1)
     .maybeSingle();
 
   if (error && (error as any).code !== 'PGRST116') {
-    console.error('[resolver] latest teacher session error:', error);
+    console.error('[resolver] latest class session error:', error);
     throw error;
   }
   return (data as CanvasSession) ?? null;
 }
+
+
+
+export async function getClassIdForLessonAndUser(
+  lessonId: string,
+  userId: string,
+  role: ViewerRole
+): Promise<string | null> {
+  console.log('[canvasService] getClassIdForLessonAndUser', { lessonId, userId, role });
+  
+  if (role === 'student') {
+    return getStudentClassForLesson(userId, lessonId);
+  } else {
+    return getTeacherClassForLesson(userId, lessonId);
+  }
+}
+
+
+
+// Helper: Get student's class for a specific lesson
+async function getStudentClassForLesson(
+  studentId: string,
+  lessonId: string
+): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.rpc('get_student_class_for_lesson', {
+      student_user_id: studentId,
+      lesson_id_param: lessonId,
+    });
+    
+    if (error) {
+      console.warn('[canvasService] get_student_class_for_lesson RPC failed:', error.message);
+      return null;
+    }
+    return data as string | null;
+  } catch (err) {
+    console.warn('[canvasService] getStudentClassForLesson error:', err);
+    return null;
+  }
+}
+
+
+
+
+async function getTeacherClassForLesson(
+  teacherId: string,
+  lessonId: string
+): Promise<string | null> {
+  try {
+    // 1. Get course_id from lesson
+    const { data: lessonData, error: lessonError } = await supabase
+      .from('lessons')
+      .select('topic_id, topics(course_id)')
+      .eq('id', lessonId)
+      .single();
+
+    if (lessonError || !lessonData) {
+      console.warn('[canvasService] Could not resolve course from lesson:', lessonError?.message);
+      return null;
+    }
+
+    const courseId = (lessonData as any)?.topics?.course_id;
+    if (!courseId) {
+      console.warn('[canvasService] Lesson has no course_id');
+      return null;
+    }
+
+    // 2. Find teacher's classes for this course (separate queries)
+    // First get all classes for this course
+    const { data: classes, error: classError } = await supabase
+      .from('classes')
+      .select('id')
+      .eq('course_id', courseId);
+
+    if (classError || !classes || classes.length === 0) {
+      console.warn('[canvasService] No classes for this course');
+      return null;
+    }
+
+    const classIds = classes.map((c: any) => c.id);
+
+    // Then find which ones this teacher is assigned to
+    const { data: classTeachers, error: ctError } = await supabase
+      .from('class_teachers')
+      .select('class_id, is_primary')
+      .eq('user_id', teacherId)
+      .in('class_id', classIds);
+
+    if (ctError || !classTeachers || classTeachers.length === 0) {
+      console.warn('[canvasService] Teacher has no classes for this course');
+      return null;
+    }
+
+    // 3. Prefer primary class
+    const primaryClass = classTeachers.find((ct: any) => ct.is_primary);
+    const selectedClass = primaryClass || classTeachers[0];
+    
+    console.log('[canvasService] Resolved teacher class:', {
+      teacherId,
+      lessonId,
+      courseId,
+      classId: selectedClass.class_id,
+      isPrimary: !!primaryClass,
+    });
+
+    return selectedClass.class_id;
+  } catch (err) {
+    console.warn('[canvasService] getTeacherClassForLesson error:', err);
+    return null;
+  }
+}
+
+
+
+
+
+
+
+
+// Helper: Check if user is a teacher for a specific class
+async function isTeacherForClass(
+  userId: string,
+  classId: string
+): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.rpc('is_teacher_for_class', {
+      user_id: userId,
+      check_class_id: classId,
+    });
+    
+    if (error) {
+      console.warn('[canvasService] is_teacher_for_class RPC failed:', error.message);
+      return false;
+    }
+    return !!data;
+  } catch (err) {
+    console.warn('[canvasService] isTeacherForClass error:', err);
+    return false;
+  }
+}
+
+// Helper: Get or create a class canvas
+async function getOrCreateClassCanvas(
+  lessonId: string,
+  classId: string,
+  slotIndex: number,
+  teacherId: string
+): Promise<CanvasSession> {
+  console.log('[canvasService] getOrCreateClassCanvas', { lessonId, classId, slotIndex });
+
+  // Try to find existing class canvas
+  const { data: existing, error: fetchError } = await supabase
+    .from('canvas_sessions')
+    .select('*')
+    .eq('lesson_id', lessonId)
+    .eq('class_id', classId)
+    .eq('slot_index', slotIndex)
+    .eq('canvas_type', 'class')
+    .maybeSingle();
+
+  if (fetchError && (fetchError as any).code !== 'PGRST116') {
+    throw fetchError;
+  }
+
+  if (existing) {
+    console.log('[canvasService] found existing class canvas:', existing.id);
+    return existing as CanvasSession;
+  }
+
+  // Create new class canvas
+  const { data: created, error: createError } = await supabase
+    .from('canvas_sessions')
+    .insert({
+      lesson_id: lessonId,
+      user_id: teacherId, // Use the requesting teacher as the creator
+      class_id: classId,
+      slot_index: slotIndex,
+      canvas_type: 'class',
+      title: `Class Canvas ${slotIndex + 1}`,
+    })
+    .select()
+    .single();
+
+  if (createError) {
+    console.error('[canvasService] failed to create class canvas:', createError);
+    throw createError;
+  }
+
+  console.log('[canvasService] created new class canvas:', created.id);
+  return created as CanvasSession;
+}
+
+
 
 // NEW: get all student sessions for a given slot including user names
 async function getAllStudentSessionsForSlot(
@@ -445,28 +650,14 @@ async function getAllStudentSessionsForSlot(
   return result;
 }
 
-/**
- * Resolve what to show for a placeholder canvas in a lesson.
- *
- * Rules:
- * - canvas_type = 'student'
- *    - viewer is student  -> their own session (create if missing), read/write
- *    - viewer is teacher  -> carousel of *all* student sessions for that slot, read-only
- * - canvas_type = 'teacher'/'teacher_example'
- *    - viewer is teacher  -> *their* own teacher session (create if missing), read/write
- *    - viewer is student  -> latest teacher session, read-only (if none yet, null → caller may render empty)
- */
-// Old Start
-// export async function resolveCanvasViewForUser(params: { ... }): Promise<ResolvedCanvasView | null> { ... }
-// Old End
-// New Start: accept optional createIfMissing (used by CanvasSlot; defaults true)
 export async function resolveCanvasViewForUser(
   params: {
     lessonId: string;
     slotIndex: number;
-    canvasType: CanvasType;       // 'student' | 'teacher' | 'teacher_example'
+    canvasType: CanvasType;       // 'student' | 'class'
     viewerUserId: string;
     viewerRole: ViewerRole;       // 'student' | 'teacher'
+    classId?: string;             // Optional: if known, use this class
     createIfMissing?: boolean;    // default true
   }
 ): Promise<ResolvedCanvasView | null> {
@@ -476,6 +667,7 @@ export async function resolveCanvasViewForUser(
     canvasType,
     viewerUserId,
     viewerRole,
+    classId,
     createIfMissing = true,
   } = params;
 
@@ -496,35 +688,81 @@ export async function resolveCanvasViewForUser(
     }
   }
 
-  // TEACHER canvas slot (normalize)
-  const teacherType: CanvasType = isTeacherType(canvasType) ? TEACHER_TYPE_DB : TEACHER_TYPE_DB;
+  // CLASS canvas slot
+  if (canvasType === 'class') {
+    if (viewerRole === 'student') {
+      // Student views their class's canvas (read-only)
+      const studentClassId = classId || await getStudentClassForLesson(viewerUserId, lessonId);
 
-  if (viewerRole === 'teacher') {
-    // Teacher edits their own teacher board for that slot
-    const session = createIfMissing
-      ? await canvasService.getOrCreateSession(lessonId, viewerUserId, slotIndex, teacherType)
-      : await canvasService.getCanvasSession(lessonId, viewerUserId, slotIndex, teacherType);
-    return { kind: 'single', session, readOnly: false };
-  } else {
-    // Student sees (read-only) the latest teacher board for that slot
-    const session = await getLatestTeacherSessionForSlot(lessonId, slotIndex);
-    if (!session) return null; // nothing to show yet
-    return { kind: 'single', session, readOnly: true };
+      if (!studentClassId) {
+        console.warn('[resolver] Student not enrolled in any class for this lesson');
+        return null;
+      }
+
+      const session = await getLatestClassSessionForSlot(lessonId, slotIndex, studentClassId);
+      if (!session && createIfMissing) {
+        // If no class canvas exists yet, show null (teacher hasn't created one yet)
+        return null;
+      }
+      return session ? { kind: 'single', session, readOnly: true } : null;
+      
+    } else {
+      // Teacher edits class canvas
+      // For now, we need to know which class - we'll need to pass this from context
+      // If classId not provided, try to infer from the teacher's classes
+      let effectiveClassId = classId;
+      
+      if (!effectiveClassId) {
+        console.warn('[resolver] Teacher viewing class canvas without classId context');
+        // For now, return null - we'll need UI to select a class
+        return null;
+      }
+
+      // Verify teacher has access to this class
+      const hasAccess = await isTeacherForClass(viewerUserId, effectiveClassId);
+      if (!hasAccess) {
+        console.warn('[resolver] Teacher does not have access to class:', effectiveClassId);
+        return null;
+      }
+
+      const session = createIfMissing
+        ? await getOrCreateClassCanvas(lessonId, effectiveClassId, slotIndex, viewerUserId)
+        : await getLatestClassSessionForSlot(lessonId, slotIndex, effectiveClassId);
+
+      return session ? { kind: 'single', session, readOnly: false } : null;
+    }
   }
-}
-// New End
 
-export async function getTeacherExampleSessionIds(lessonId: string, slotIndex: number): Promise<string[]> {
-  const { data, error } = await supabase
+  return null;
+}
+
+
+export async function getClassCanvasSessionIds(
+  lessonId: string, 
+  slotIndex: number,
+  classId?: string
+): Promise<string[]> {
+  let query = supabase
     .from('canvas_sessions')
     .select('id')
     .eq('lesson_id', lessonId)
     .eq('slot_index', slotIndex)
-    .eq('canvas_type', 'teacher_example')
-    .order('updated_at', { ascending: true });
+    .eq('canvas_type', 'class');
+  
+  if (classId) {
+    query = query.eq('class_id', classId);
+  }
+
+  const { data, error } = await query.order('updated_at', { ascending: true });
 
   if (error) throw new Error(error.message);
   return (data ?? []).map((r: any) => r.id as string);
+}
+
+// Keep the old function name as an alias for backwards compatibility (temporary)
+export async function getTeacherExampleSessionIds(lessonId: string, slotIndex: number): Promise<string[]> {
+  console.warn('[canvasService] getTeacherExampleSessionIds is deprecated, use getClassCanvasSessionIds');
+  return getClassCanvasSessionIds(lessonId, slotIndex);
 }
 
 // Old Start: time-normalizing merge (timestamp-based with fallbacks)

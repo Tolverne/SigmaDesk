@@ -1,14 +1,7 @@
 // src/components/lesson/SectionRenderer.tsx
 
-// Old Start
-// import MathBlock from '../MathBlock';
-// import {CanvasWorkspace} from '../canvas/CanvasWorkspace';
-// Old End
-
-// New Start (imports)
 import MathBlock from '../MathBlock';
 import CanvasSlot from '../canvas/CanvasSlot';
-// New End
 
 type Props = {
   lessonId: string;
@@ -17,39 +10,21 @@ type Props = {
 };
 
 export function SectionRenderer({bodyHtml, lessonId, slotStart = 0}: Props) {
-  // Old Start: tokenization was fine; keep it
-  // const tokens: Array<{html?: string, type?: 'student'|'teacher'}> = [];
-  // const regex = /<div data-canvas="(student|teacher)"><\/div>/g;
-  // let lastIndex = 0, match: RegExpExecArray|null, slotOffset = 0;
-  //
-  // while ((match = regex.exec(bodyHtml))) {
-  //   if (match.index > lastIndex) {
-  //     tokens.push({ html: bodyHtml.slice(lastIndex, match.index) });
-  //   }
-  //   tokens.push({ type: match[1] as 'student'|'teacher' });
-  //   lastIndex = match.index + match[0].length;
-  // }
-  // if (lastIndex < bodyHtml.length) {
-  //   tokens.push({ html: bodyHtml.slice(lastIndex) });
-  // }
-  // Old End
-
-  // New Start: same tokenization (unchanged behavior)
-  const tokens: Array<{html?: string, type?: 'student'|'teacher'}> = [];
-  const regex = /<div data-canvas="(student|teacher)"><\/div>/g;
-  let lastIndex = 0, match: RegExpExecArray|null, slotOffset = 0;
+  // Updated regex to handle 'student' and 'class' canvas types
+  const tokens: Array<{html?: string, type?: 'student' | 'class'}> = [];
+  const regex = /<div data-canvas="(student|class)"><\/div>/g;
+  let lastIndex = 0, match: RegExpExecArray | null, slotOffset = 0;
 
   while ((match = regex.exec(bodyHtml))) {
     if (match.index > lastIndex) {
       tokens.push({ html: bodyHtml.slice(lastIndex, match.index) });
     }
-    tokens.push({ type: match[1] as 'student'|'teacher' });
+    tokens.push({ type: match[1] as 'student' | 'class' });
     lastIndex = match.index + match[0].length;
   }
   if (lastIndex < bodyHtml.length) {
     tokens.push({ html: bodyHtml.slice(lastIndex) });
   }
-  // New End
 
   return (
     <div className="section">
@@ -58,28 +33,21 @@ export function SectionRenderer({bodyHtml, lessonId, slotStart = 0}: Props) {
 
         const slotIndex = slotStart + (slotOffset++);
 
-        // Old Start: direct CanvasWorkspace (no role awareness / no teacher carousel)
-        // return t.type === 'student'
-        //   ? <CanvasWorkspace key={`s-${i}`} lessonId={lessonId} slotIndex={slotIndex} canvasType="student"/>
-        //   : <CanvasWorkspace key={`t-${i}`} lessonId={lessonId} slotIndex={slotIndex} canvasType="teacher_example"/>;
-        // Old End
-
-        // New Start: delegate to CanvasSlot (handles all 4 behaviors)
+        // Map token type to canvas type
         // - Student @ 'student' -> read/write own canvas
-        // - Student @ 'teacher_example' -> read-only
-        // - Teacher @ 'teacher_example' -> read/write own teacher board
+        // - Student @ 'class' -> read-only view of class canvas
+        // - Teacher @ 'class' -> read/write class canvas (for their assigned class)
         // - Teacher @ 'student' -> StudentCanvasCarousel showing all students for that slot
-        const canvasType = t.type === 'student' ? 'student' : 'teacher_example';
+        const canvasType = t.type === 'student' ? 'student' : 'class';
         return (
           <CanvasSlot
             key={`c-${i}`}
             lessonId={lessonId}
             slotIndex={slotIndex}
-            canvasType={canvasType as 'student' | 'teacher_example'}
+            canvasType={canvasType}
             className="mb-2"
           />
         );
-        // New End
       })}
     </div>
   );

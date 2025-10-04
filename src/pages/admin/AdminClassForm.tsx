@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../utils/supabase';
-import { ArrowLeft, Save, Plus, X } from 'lucide-react';
+import { ArrowLeft, Save, Plus, X, Star } from 'lucide-react';
 
 interface Course {
   id: string;
@@ -15,6 +15,17 @@ interface User {
   full_name: string;
   email: string;
   role: string;
+}
+
+// Teacher assignment from class_teachers table
+interface ClassTeacher {
+  id: string;
+  user_id: string;
+  is_primary: boolean;
+  user_profiles: {
+    full_name: string;
+    email: string;
+  };
 }
 
 // Raw enrollment row as returned by Supabase (user_profiles can be an array or object)
@@ -60,8 +71,10 @@ const AdminClassForm: React.FC = () => {
   const [teachers, setTeachers] = useState<User[]>([]);
   const [students, setStudents] = useState<User[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [classTeachers, setClassTeachers] = useState<ClassTeacher[]>([]);
   const [courseEnrollments, setCourseEnrollments] = useState<CourseEnrollmentMap>({});
   const [selectedStudent, setSelectedStudent] = useState('');
+  const [selectedTeacher, setSelectedTeacher] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -76,6 +89,7 @@ const AdminClassForm: React.FC = () => {
     if (classId) {
       loadClass().then(() => {
         loadEnrollments();
+        loadClassTeachers();
         loadCourseEnrollments(); // depends on formData.course_id (set by loadClass)
       });
     }
@@ -138,59 +152,108 @@ const AdminClassForm: React.FC = () => {
     }
   };
 
-  // Enrollments for THIS class (robust: normalize arrays/objects + fallback to 2-step fetch)
-    const loadEnrollments = async () => {
+  // Load teachers assigned to this class
+  const loadClassTeachers = async () => {
     if (!classId) return;
 
     try {
-        // Step 1: get enrollment rows for this class (no nested joins)
-        const { data: rows, error } = await supabase
-        .from('enrollments')
-        .select('id, user_id') // minimal fields → friendlier to RLS
+      // Step 1: get class_teachers rows for this class
+      const { data: rows, error } = await supabase
+        .from('class_teachers')
+        .select('id, user_id, is_primary')
         .eq('class_id', classId);
 
-        if (error) throw error;
+      if (error) throw error;
 
-        if (!rows || rows.length === 0) {
-        setEnrollments([]);
+      if (!rows || rows.length === 0) {
+        setClassTeachers([]);
         return;
-        }
+      }
 
-        // Step 2: fetch profiles for those user IDs and merge
-        const ids = Array.from(new Set(rows.map((r: any) => r.user_id))).filter(Boolean) as string[];
-        let profilesMap: Record<string, { full_name: string; email: string }> = {};
+      // Step 2: fetch profiles for those user IDs
+      const ids = Array.from(new Set(rows.map((r: any) => r.user_id))).filter(Boolean) as string[];
+      let profilesMap: Record<string, { full_name: string; email: string }> = {};
 
-        if (ids.length > 0) {
+      if (ids.length > 0) {
         const { data: profs, error: profErr } = await supabase
-            .from('user_profiles')
-            .select('id, full_name, email')
-            .in('id', ids);
+          .from('user_profiles')
+          .select('id, full_name, email')
+          .in('id', ids);
 
         if (profErr) {
-            console.warn('[AdminClassForm] profiles fetch failed:', profErr.message);
+          console.warn('[AdminClassForm] teacher profiles fetch failed:', profErr.message);
         } else if (profs) {
-            profilesMap = (profs as any[]).reduce((acc, p) => {
+          profilesMap = (profs as any[]).reduce((acc, p) => {
             acc[p.id] = { full_name: p.full_name || '', email: p.email || '' };
             return acc;
-            }, {} as Record<string, { full_name: string; email: string }>);
+          }, {} as Record<string, { full_name: string; email: string }>);
         }
-        }
+      }
 
-        const normalized = (rows || []).map((r: any) => ({
+      const normalized = (rows || []).map((r: any) => ({
+        id: r.id,
+        user_id: r.user_id,
+        is_primary: r.is_primary || false,
+        user_profiles: profilesMap[r.user_id] || { full_name: '', email: '' },
+      }));
+
+      setClassTeachers(normalized);
+    } catch (err: any) {
+      console.error('Error loading class teachers:', err);
+    }
+  };
+
+  // Enrollments for THIS class (robust: normalize arrays/objects + fallback to 2-step fetch)
+  const loadEnrollments = async () => {
+    if (!classId) return;
+
+    try {
+      // Step 1: get enrollment rows for this class (no nested joins)
+      const { data: rows, error } = await supabase
+        .from('enrollments')
+        .select('id, user_id')
+        .eq('class_id', classId);
+
+      if (error) throw error;
+
+      if (!rows || rows.length === 0) {
+        setEnrollments([]);
+        return;
+      }
+
+      // Step 2: fetch profiles for those user IDs and merge
+      const ids = Array.from(new Set(rows.map((r: any) => r.user_id))).filter(Boolean) as string[];
+      let profilesMap: Record<string, { full_name: string; email: string }> = {};
+
+      if (ids.length > 0) {
+        const { data: profs, error: profErr } = await supabase
+          .from('user_profiles')
+          .select('id, full_name, email')
+          .in('id', ids);
+
+        if (profErr) {
+          console.warn('[AdminClassForm] profiles fetch failed:', profErr.message);
+        } else if (profs) {
+          profilesMap = (profs as any[]).reduce((acc, p) => {
+            acc[p.id] = { full_name: p.full_name || '', email: p.email || '' };
+            return acc;
+          }, {} as Record<string, { full_name: string; email: string }>);
+        }
+      }
+
+      const normalized = (rows || []).map((r: any) => ({
         id: r.id,
         user_id: r.user_id,
         user_profiles: profilesMap[r.user_id] || { full_name: '', email: '' },
-        }));
+      }));
 
-        setEnrollments(normalized);
+      setEnrollments(normalized);
     } catch (err: any) {
-        console.error('Error loading enrollments:', err);
-        // keep current UI state; optionally surface an alert
+      console.error('Error loading enrollments:', err);
     }
-    };
+  };
 
-
-  // Enrollments for THIS COURSE across ANY class (for “move” UX)
+  // Enrollments for THIS COURSE across ANY class (for "move" UX)
   const loadCourseEnrollments = async () => {
     if (!formData.course_id) return;
     try {
@@ -258,6 +321,86 @@ const AdminClassForm: React.FC = () => {
       alert(`Failed to save class: ${err.message}`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleAssignTeacher = async () => {
+    if (!selectedTeacher || !classId) return;
+
+    try {
+      // Check if teacher already assigned to this class
+      const { data: existing } = await supabase
+        .from('class_teachers')
+        .select('id')
+        .eq('user_id', selectedTeacher)
+        .eq('class_id', classId)
+        .maybeSingle();
+
+      if (existing?.id) {
+        alert('This teacher is already assigned to this class.');
+        return;
+      }
+
+      // Insert new class_teacher assignment
+      const { error } = await supabase
+        .from('class_teachers')
+        .insert({
+          user_id: selectedTeacher,
+          class_id: classId,
+          is_primary: classTeachers.length === 0, // First teacher is primary by default
+        });
+
+      if (error) throw error;
+
+      setSelectedTeacher('');
+      await loadClassTeachers();
+      alert('Teacher assigned successfully.');
+    } catch (err: any) {
+      alert(`Failed to assign teacher: ${err.message}`);
+    }
+  };
+
+  const handleRemoveTeacher = async (classTeacherId: string) => {
+    if (!window.confirm('Are you sure you want to remove this teacher from the class?')) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('class_teachers')
+        .delete()
+        .eq('id', classTeacherId);
+
+      if (error) throw error;
+
+      setClassTeachers(classTeachers.filter(ct => ct.id !== classTeacherId));
+      alert('Teacher removed successfully');
+    } catch (err: any) {
+      alert(`Failed to remove teacher: ${err.message}`);
+    }
+  };
+
+  const handleTogglePrimaryTeacher = async (classTeacherId: string, currentIsPrimary: boolean) => {
+    try {
+      // If setting as primary, first unset all others
+      if (!currentIsPrimary) {
+        await supabase
+          .from('class_teachers')
+          .update({ is_primary: false })
+          .eq('class_id', classId);
+      }
+
+      // Toggle this teacher's primary status
+      const { error } = await supabase
+        .from('class_teachers')
+        .update({ is_primary: !currentIsPrimary })
+        .eq('id', classTeacherId);
+
+      if (error) throw error;
+
+      await loadClassTeachers();
+    } catch (err: any) {
+      alert(`Failed to update primary teacher: ${err.message}`);
     }
   };
 
@@ -339,6 +482,17 @@ const AdminClassForm: React.FC = () => {
       return { value: s.id, label, disabled: alreadyInThisClass };
     });
   }, [students, courseEnrollments, classId]);
+
+  // Build options for teacher dropdown (exclude already assigned)
+  const teacherOptions = useMemo(() => {
+    const assignedIds = new Set(classTeachers.map(ct => ct.user_id));
+    return teachers
+      .filter(t => !assignedIds.has(t.id))
+      .map(t => ({
+        value: t.id,
+        label: `${t.full_name} (${t.email})`,
+      }));
+  }, [teachers, classTeachers]);
 
   if (loading) {
     return (
@@ -424,7 +578,7 @@ const AdminClassForm: React.FC = () => {
 
             <div>
               <label htmlFor="display_name" className="block text-sm font-medium text-gray-700 mb-2">
-              Display Name
+                Display Name
               </label>
               <input
                 type="text"
@@ -460,6 +614,98 @@ const AdminClassForm: React.FC = () => {
           </div>
         </div>
       </form>
+
+      {/* Teacher Assignments (only show if editing) */}
+      {isEdit && classId && (
+        <div className="bg-white border border-gray-200 rounded-lg p-6 mb-8">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Teacher Assignments</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Teachers assigned to this class can create and edit class canvases for demonstrations.
+              The primary teacher is used when auto-resolving which class canvas to display.
+            </p>
+          </div>
+
+          {/* Add Teacher */}
+          <div className="flex gap-2 mb-6">
+            <select
+              value={selectedTeacher}
+              onChange={(e) => setSelectedTeacher(e.target.value)}
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-sigma-blue focus:border-transparent"
+            >
+              <option value="">Select a teacher to assign...</option>
+              {teacherOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleAssignTeacher}
+              disabled={!selectedTeacher}
+              className="flex items-center px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Plus className="w-5 h-5 mr-2" />
+              Assign
+            </button>
+          </div>
+
+          {/* Assigned Teachers List */}
+          {classTeachers.length === 0 ? (
+            <div className="text-center py-8 bg-gray-50 rounded-lg">
+              <p className="text-gray-600">No teachers assigned to this class yet</p>
+              <p className="text-sm text-gray-500 mt-1">
+                Assign at least one teacher to enable class canvas functionality
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {classTeachers.map((ct) => (
+                <div
+                  key={ct.id}
+                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                >
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => handleTogglePrimaryTeacher(ct.id, ct.is_primary)}
+                      className={`p-1 rounded transition-colors ${
+                        ct.is_primary
+                          ? 'text-yellow-500 hover:text-yellow-600'
+                          : 'text-gray-300 hover:text-yellow-500'
+                      }`}
+                      title={ct.is_primary ? 'Primary teacher' : 'Set as primary teacher'}
+                    >
+                      <Star className={`w-5 h-5 ${ct.is_primary ? 'fill-current' : ''}`} />
+                    </button>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-gray-900">
+                          {ct.user_profiles.full_name || '—'}
+                        </p>
+                        {ct.is_primary && (
+                          <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">
+                            Primary
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-600">
+                        {ct.user_profiles.email}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleRemoveTeacher(ct.id)}
+                    className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                    title="Remove from class"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Student Enrollments (only show if editing) */}
       {isEdit && classId && (
