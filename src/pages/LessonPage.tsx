@@ -4,75 +4,17 @@ import { useAuth } from '../contexts/AuthContext';
 import { courseService } from '../services/courseService';
 import { supabase } from '../utils/supabase';
 import { Lesson } from '../types/course.types';
-import Breadcrumb from '../components/Breadcrumb';
-import SectionCarousel from '../components/lesson/SectionCarousel';
-
-// Old Start: We previously rendered CanvasWorkspace directly for every \workskip
-// import CanvasWorkspace from '../components/canvas/CanvasWorkspace';
-// Old End
-
-// Old Start: Swap to CanvasSlot which decides between single canvas vs teacher carousel,
-// and sets read/write vs read-only by user role + canvas_type.
-// import CanvasSlot from '../components/canvas/CanvasSlot';
-// Old End
-
+import Breadcrumb, { BreadcrumbItem } from '../components/Breadcrumb';import SectionCarousel from '../components/lesson/SectionCarousel';
 import { ChevronLeft, ChevronRight, CheckCircle } from 'lucide-react';
 
-// Old Start: Only supported \workskip (student canvas) markers
-// const WORKSKIP_REGEX = /\\workskip\b/g; // matches \workskip markers in LaTeX
-// Old End
-
-// Old Start: Dual marker regex + splitter, and HTML escaper (no longer needed)
-/*
-const CANVAS_MARKER_REGEX = /\\\\?(workskip|bigskip)\b/g;
-
-function escapeHtml(s: string) {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
-type Segment =
-  | { type: 'text'; content: string }
-  | { type: 'canvas'; index: number; canvasType: 'student' | 'teacher_example' };
-
-function splitByCanvasMarkers(latex: string): Segment[] {
-  const parts: Segment[] = [];
-  if (!latex || !latex.length) return [{ type: 'text', content: '' }];
-
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  let slot = 0;
-
-  while ((match = CANVAS_MARKER_REGEX.exec(latex)) !== null) {
-    const textChunk = latex.slice(lastIndex, match.index);
-    if (textChunk) parts.push({ type: 'text', content: textChunk });
-
-    const tag = (match[1] as 'workskip' | 'bigskip');
-    const canvasType = tag === 'workskip' ? 'student' : 'teacher_example';
-
-    parts.push({ type: 'canvas', index: slot, canvasType });
-    slot += 1;
-
-    lastIndex = match.index + match[0].length;
-  }
-
-  const tail = latex.slice(lastIndex);
-  if (tail) parts.push({ type: 'text', content: tail });
-
-  if (parts.length === 0) return [{ type: 'text', content: latex }];
-  return parts;
-}
-*/
-// Old End
-
-// New Start: (no new helpers needed here; SectionCarousel handles parsing, media, math, and canvases)
-// New End
-
 const LessonPage: React.FC = () => {
-  const { courseId, lessonId } = useParams<{ courseId: string; lessonId: string }>();
-  const { user } = useAuth();
+  const { courseId, classId, topicId, lessonId } = useParams<{ 
+    courseId: string; 
+    classId?: string;
+    topicId?: string;
+    lessonId: string;
+  }>();
+  const { user, profile } = useAuth();
   const navigate = useNavigate();
 
   const [lesson, setLesson] = useState<Lesson | null>(null);
@@ -80,6 +22,47 @@ const LessonPage: React.FC = () => {
   const [isCompleted, setIsCompleted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
+  
+  const [className, setClassName] = useState<string | null>(null);
+  const [courseName, setCourseName] = useState<string | null>(null);
+  const [topicName, setTopicName] = useState<string | null>(null);
+
+  // Navigation state
+  const [nextLessonId, setNextLessonId] = useState<string | null>(null);
+  const [prevLessonId, setPrevLessonId] = useState<string | null>(null);
+
+  // Load class name if classId is present
+  useEffect(() => {
+    if (!classId) return;
+
+    const controller = new AbortController();
+    const { signal } = controller;
+
+    const loadClassName = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('classes')
+          .select('name, display_name')
+          .eq('id', classId)
+          .single();
+
+        if (signal.aborted) return;
+
+        if (error) {
+          console.warn('Failed to load class name:', error);
+          return;
+        }
+
+        setClassName(data.display_name || data.name);
+      } catch (err) {
+        console.warn('Error loading class name:', err);
+      }
+    };
+
+    loadClassName();
+
+    return () => controller.abort();
+  }, [classId]);
 
   useEffect(() => {
     if (!lessonId) return;
@@ -96,6 +79,35 @@ const LessonPage: React.FC = () => {
         if (signal.aborted) return;
         setLesson(data);
 
+        // Extract metadata from lesson data
+        const lessonData = data as any;
+        if (lessonData?.topics?.courses?.title) {
+          setCourseName(lessonData.topics.courses.title);
+        }
+        if (lessonData?.topics?.title) {
+          setTopicName(lessonData.topics.title);
+        }
+
+        // Get next/previous lessons in the same topic
+        if (lessonData?.topic_id) {
+          const { data: siblings } = await supabase
+            .from('lessons')
+            .select('id, display_order')
+            .eq('topic_id', lessonData.topic_id)
+            .order('display_order', { ascending: true });
+
+          if (siblings && !signal.aborted) {
+            const currentIndex = siblings.findIndex((l: any) => l.id === lessonId);
+            if (currentIndex > 0) {
+              setPrevLessonId(siblings[currentIndex - 1].id);
+            }
+            if (currentIndex < siblings.length - 1) {
+              setNextLessonId(siblings[currentIndex + 1].id);
+            }
+          }
+        }
+
+        // Check completion status
         if (user?.id) {
           try {
             const { data: prog } = await supabase
@@ -144,6 +156,58 @@ const LessonPage: React.FC = () => {
     }
   };
 
+  const handleNextLesson = () => {
+    if (!nextLessonId) return;
+    
+    if (classId) {
+      navigate(`/courses/${courseId}/classes/${classId}/lessons/${nextLessonId}`);
+    } else {
+      navigate(`/courses/${courseId}/lessons/${nextLessonId}`);
+    }
+  };
+
+  const handlePrevLesson = () => {
+    if (!prevLessonId) return;
+    
+    if (classId) {
+      navigate(`/courses/${courseId}/classes/${classId}/lessons/${prevLessonId}`);
+    } else {
+      navigate(`/courses/${courseId}/lessons/${prevLessonId}`);
+    }
+  };
+
+  // Build breadcrumb items with full context
+  const breadcrumbItems: BreadcrumbItem[] = [
+    { label: 'Courses', path: '/courses' },
+    { 
+      label: courseName || 'Course', 
+      path: courseId ? `/courses/${courseId}` : '/courses' 
+    },
+  ];
+
+  // Add class breadcrumb for teachers
+  if (classId && className) {
+    breadcrumbItems.push({
+      label: className,
+      path: `/courses/${courseId}/classes/${classId}`,
+    });
+  }
+
+  // Add topic breadcrumb if available
+  if (topicId && topicName) {
+    const topicPath = classId 
+      ? `/courses/${courseId}/classes/${classId}/topics/${topicId}`
+      : `/courses/${courseId}/topics/${topicId}`;
+    breadcrumbItems.push({
+      label: topicName,
+      path: topicPath,
+    });
+  }
+
+  // Add current lesson (no path - it's the current page)
+breadcrumbItems.push({ label: lesson?.title || 'Lesson' });
+
+
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
@@ -154,12 +218,9 @@ const LessonPage: React.FC = () => {
 
   if (error && !lesson) {
     return (
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        <Breadcrumb items={[
-          { label: 'Courses', path: '/courses' },
-          { label: 'Course', path: `/courses/${courseId}` },
-        ]} />
-        <div className="text-center py-12 bg-red-50 rounded-lg">
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        <Breadcrumb items={breadcrumbItems} />
+        <div className="text-center py-12 bg-red-50 rounded-lg border border-red-200">
           <div className="text-red-500 text-5xl mb-4">⚠️</div>
           <h2 className="text-xl font-semibold text-red-800 mb-2">
             {error === 'Lesson not found' ? 'Lesson Not Found' : 'Failed to Load Lesson'}
@@ -185,32 +246,28 @@ const LessonPage: React.FC = () => {
   }
 
   if (!lesson) {
-    return <div className="max-w-4xl mx-auto px-4 py-8">Lesson not found</div>;
+    return <div className="max-w-7xl mx-auto px-4 py-8">Lesson not found</div>;
   }
 
-  // Old Start: Manual splitting + CanvasSlot/CanvasWorkspace rendering
-  /*
-  const segments = splitByCanvasMarkers(String((lesson as any).content_latex || ''));
-  */
-  // Old End
-
-  // New Start: Pick the LaTeX-ish source string the carousel should render.
-  // Adjust the priority order below to match your actual lesson shape.
   const latexSource =
     (lesson as any).content_latex ??
     (lesson as any).content ??
     (lesson as any).latex ??
     (lesson as any).body ??
     '';
-  // New End
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
-      <Breadcrumb items={[
-        { label: 'Courses', path: '/courses' },
-        { label: 'Course', path: `/courses/${courseId}` },
-        { label: lesson.title }
-      ]} />
+    <div className="max-w-7xl mx-auto px-4 py-8">
+      <Breadcrumb items={breadcrumbItems} />
+
+      {/* Class context banner for teachers */}
+      {classId && className && profile?.role === 'teacher' && (
+        <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
+          <p className="text-sm text-blue-800">
+            Teaching: <span className="font-semibold">{className}</span>
+          </p>
+        </div>
+      )}
 
       <div className="bg-white rounded-lg shadow">
         {/* Header */}
@@ -242,69 +299,51 @@ const LessonPage: React.FC = () => {
 
         {/* Content */}
         <div className="p-6 space-y-6">
-          {/* Old Start: Manual segment map with escapeHtml + CanvasSlot */}
-          {/*
-          {segments.map((seg, i) =>
-            seg.type === 'text' ? (
-              <div key={`t-${i}`} className="bg-gray-50 rounded-lg p-4">
-                <div
-                  className="prose max-w-none"
-                  dangerouslySetInnerHTML={{
-                    __html: escapeHtml(seg.content || '').replace(/\n/g, '<br/>'),
-                  }}
-                />
-              </div>
-            ) : (
-              <div key={`c-${seg.index}`} className="bg-white rounded-lg">
-                <h3 className="text-md font-semibold text-gray-700 mb-2">
-                  {seg.canvasType === 'student'
-                    ? `Student Working Area ${Number(seg.index) + 1}`
-                    : `Teacher Board ${Number(seg.index) + 1}`}
-                </h3>
-                <CanvasSlot
-                  lessonId={lesson.id}
-                  slotIndex={Number(seg.index)}
-                  canvasType={seg.canvasType}
-                  className="mb-2"
-                />
-              </div>
-            )
-          )}
-
-          {segments.every(s => s.type === 'text') && (
-            <div className="bg-white rounded-lg">
-              <h3 className="text-md font-semibold text-gray-700 mb-2">Working Area</h3>
-              <CanvasSlot lessonId={lesson.id} slotIndex={0} canvasType="student" className="mb-2" />
-            </div>
-          )}
-          */}
-          {/* Old End */}
-
-          {/* New Start: Render the entire lesson via the LaTeX→HTML→Carousel pipeline.
-              This handles: equations (MathJax), images/video (sanitized), structure
-              (\section, \questions/\question/\parts/\part), and canvas mount points
-              (\workskip -> student, \bigskip -> teacher_example). */}
-          <SectionCarousel lessonId={lesson.id} latexSource={latexSource} />
-          {/* New End */}
+          <SectionCarousel 
+            lessonId={lesson.id} 
+            latexSource={latexSource}
+            classId={classId}
+          />
         </div>
 
         {/* Navigation */}
         <div className="p-6 border-t bg-gray-50">
           <div className="flex justify-between">
-            <button
-              onClick={() => navigate(`/courses/${courseId}`)}
-              className="flex items-center px-4 py-2 text-gray-600 hover:text-gray-800"
-            >
-              <ChevronLeft className="w-5 h-5 mr-1" />
-              Back to Course
-            </button>
-            <button
-              className="flex items-center px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700"
-              disabled
-            >
-              Next Lesson
-              <ChevronRight className="w-5 h-5 ml-1" />
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  if (classId) {
+                    navigate(`/courses/${courseId}/classes/${classId}`);
+                  } else {
+                    navigate(`/courses/${courseId}`);
+                  }
+                }}
+                className="flex items-center px-4 py-2 text-gray-600 hover:text-gray-800"
+              >
+                <ChevronLeft className="w-5 h-5 mr-1" />
+                {classId ? 'Back to Class' : 'Back to Course'}
+              </button>
+              
+              {prevLessonId && (
+                <button
+                  onClick={handlePrevLesson}
+                  className="flex items-center px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700"
+                >
+                  <ChevronLeft className="w-4 h-4 mr-1" />
+                  Previous Lesson
+                </button>
+              )}
+            </div>
+
+            {nextLessonId && (
+              <button
+                onClick={handleNextLesson}
+                className="flex items-center px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700"
+              >
+                Next Lesson
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </button>
+            )}
           </div>
         </div>
       </div>

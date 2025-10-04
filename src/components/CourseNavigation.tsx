@@ -2,19 +2,23 @@ import React, { useState } from 'react';
 import { ChevronRight, ChevronDown, Circle, CheckCircle } from 'lucide-react';
 import { Topic, Lesson } from '../types/course.types';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 interface CourseNavigationProps {
   topics: Topic[];
   currentLessonId?: string;
   courseId: string;
+  classId?: string; // Optional: if viewing from a class context
 }
 
 const CourseNavigation: React.FC<CourseNavigationProps> = ({ 
   topics, 
   currentLessonId,
-  courseId 
+  courseId,
+  classId 
 }) => {
   const navigate = useNavigate();
+  const { profile } = useAuth();
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set());
 
   const toggleTopic = (topicId: string) => {
@@ -28,7 +32,18 @@ const CourseNavigation: React.FC<CourseNavigationProps> = ({
   };
 
   const navigateToLesson = (lessonId: string) => {
-    navigate(`/courses/${courseId}/lessons/${lessonId}`);
+    // If classId is provided (teacher viewing from class page), use class-aware URL
+    if (classId) {
+      navigate(`/courses/${courseId}/classes/${classId}/lessons/${lessonId}`);
+    } 
+    // Teachers without classId should go to class selector
+    else if (profile?.role === 'teacher') {
+      navigate(`/courses/${courseId}/classes`);
+    } 
+    // Students use the redirect route (auto-adds their class)
+    else {
+      navigate(`/courses/${courseId}/lessons/${lessonId}`);
+    }
   };
 
   return (

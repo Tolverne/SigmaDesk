@@ -2,13 +2,22 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { courseService } from '../services/courseService';
+import { supabase } from '../utils/supabase';
 import { Course, Topic } from '../types/course.types';
 import CourseNavigation from '../components/CourseNavigation';
-import Breadcrumb from '../components/Breadcrumb';
+import Breadcrumb, { BreadcrumbItem } from '../components/Breadcrumb';
+
+interface ClassWithStats {
+  id: string;
+  name: string;
+  display_name: string | null;
+  student_count: number;
+  is_primary: boolean;
+}
 
 const CourseDetailPage: React.FC = () => {
-  const { courseId } = useParams<{ courseId: string }>();
-  const { user } = useAuth();
+  const { courseId, classId } = useParams<{ courseId: string; classId?: string }>();
+  const { user, profile } = useAuth();
   const navigate = useNavigate();
 
   const [course, setCourse] = useState<Course | null>(null);
@@ -17,8 +26,14 @@ const CourseDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Class selection state (for teachers)
+  const [classes, setClasses] = useState<ClassWithStats[]>([]);
+  const [classesLoading, setClassesLoading] = useState(false);
+  const [className, setClassName] = useState<string | null>(null);
+
   const mountedRef = useRef(true);
 
+  // Load course details
   useEffect(() => {
     mountedRef.current = true;
     const controller = new AbortController();
@@ -80,12 +95,137 @@ const CourseDetailPage: React.FC = () => {
     };
   }, [courseId, user?.id]);
 
+  // Load class name if classId exists
+  useEffect(() => {
+    if (!classId) {
+      setClassName(null);
+      return;
+    }
+
+    const loadClassName = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('classes')
+          .select('name, display_name')
+          .eq('id', classId)
+          .single();
+
+        if (error) throw error;
+        setClassName(data.display_name || data.name);
+      } catch (err) {
+        console.error('Error loading class name:', err);
+      }
+    };
+
+    loadClassName();
+  }, [classId]);
+
+  // Load teacher's classes for this course (if teacher without classId)
+  useEffect(() => {
+    if (profile?.role !== 'teacher' || classId || !courseId || !user?.id) {
+      return;
+    }
+
+    const loadClasses = async () => {
+      setClassesLoading(true);
+      try {
+        // Get all classes for this course
+        const { data: courseClasses, error: classError } = await supabase
+          .from('classes')
+          .select('id, name, display_name')
+          .eq('course_id', courseId);
+
+        if (classError) throw classError;
+
+        if (!courseClasses || courseClasses.length === 0) {
+          setClasses([]);
+          return;
+        }
+
+        const classIds = courseClasses.map(c => c.id);
+
+        // Check which ones this teacher is assigned to
+        const { data: teacherAssignments, error: assignError } = await supabase
+          .from('class_teachers')
+          .select('class_id, is_primary')
+          .eq('user_id', user.id)
+          .in('class_id', classIds);
+
+        if (assignError) throw assignError;
+
+        const assignedClassIds = new Set(
+          (teacherAssignments || []).map((a: any) => a.class_id)
+        );
+
+        const assignedClasses = courseClasses.filter(c => assignedClassIds.has(c.id));
+
+        // Get student counts
+        const { data: enrollments } = await supabase
+          .from('enrollments')
+          .select('class_id')
+          .in('class_id', assignedClasses.map(c => c.id));
+
+        const countMap = (enrollments || []).reduce((acc: Record<string, number>, e: any) => {
+          acc[e.class_id] = (acc[e.class_id] || 0) + 1;
+          return acc;
+        }, {});
+
+        const primaryMap = (teacherAssignments || []).reduce((acc: Record<string, boolean>, a: any) => {
+          acc[a.class_id] = a.is_primary || false;
+          return acc;
+        }, {});
+
+        const classList = assignedClasses.map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          display_name: c.display_name,
+          student_count: countMap[c.id] || 0,
+          is_primary: primaryMap[c.id] || false,
+        }));
+
+        setClasses(classList);
+      } catch (err) {
+        console.error('Failed to load classes:', err);
+      } finally {
+        setClassesLoading(false);
+      }
+    };
+
+    loadClasses();
+  }, [courseId, user?.id, profile?.role, classId]);
+
+  const handleSelectClass = (selectedClassId: string) => {
+    // Navigate to class-aware course URL
+    navigate(`/courses/${courseId}/classes/${selectedClassId}`);
+  };
+
   const startLearning = () => {
     const firstLessonId = topics?.[0]?.lessons?.[0]?.id;
-    if (firstLessonId) {
+    if (!firstLessonId) return;
+
+    if (classId) {
+      // Already have class context, go directly to lesson
+      navigate(`/courses/${courseId}/classes/${classId}/lessons/${firstLessonId}`);
+    } else if (profile?.role === 'teacher') {
+      // Teacher needs to select class first (shouldn't happen with new flow)
+      alert('Please select a class first');
+    } else {
+      // Student - use redirect route
       navigate(`/courses/${courseId}/lessons/${firstLessonId}`);
     }
   };
+
+  // Build breadcrumbs
+  const breadcrumbItems: BreadcrumbItem[] = [
+    { label: 'Courses', path: '/courses' },
+    { label: course?.title || 'Course' }
+  ];
+
+  // Add class breadcrumb if present
+  if (classId && className) {
+    breadcrumbItems[1].path = `/courses/${courseId}`;
+    breadcrumbItems.push({ label: className });
+  }
 
   if (loading) {
     return (
@@ -128,14 +268,80 @@ const CourseDetailPage: React.FC = () => {
     return <div className="max-w-7xl mx-auto px-4 py-8">Course not found</div>;
   }
 
+  // Teacher without class selected - show class selector
+  if (profile?.role === 'teacher' && !classId) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        <Breadcrumb items={breadcrumbItems} />
+
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-800 mb-2">{course.title}</h1>
+          <p className="text-gray-600 mb-4">{course.description}</p>
+          <p className="text-sigma-blue font-medium">Select a class to continue</p>
+        </div>
+
+        {classesLoading ? (
+          <div className="flex justify-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sigma-blue"></div>
+          </div>
+        ) : classes.length === 0 ? (
+          <div className="bg-white rounded-lg shadow p-8 text-center">
+            <div className="text-gray-400 text-5xl mb-4">📚</div>
+            <h2 className="text-xl font-bold mb-2">No Classes Assigned</h2>
+            <p className="text-gray-600">
+              You are not assigned to any classes for this course. Contact your administrator to be assigned to a class.
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {classes.map((cls) => (
+              <button
+                key={cls.id}
+                onClick={() => handleSelectClass(cls.id)}
+                className="text-left p-6 bg-white rounded-lg shadow hover:shadow-lg hover:border-sigma-blue border-2 border-transparent transition-all"
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <h3 className="text-xl font-semibold text-gray-800">
+                    {cls.display_name || cls.name}
+                  </h3>
+                  {cls.is_primary && (
+                    <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">
+                      Primary
+                    </span>
+                  )}
+                </div>
+                {cls.display_name && (
+                  <p className="text-sm text-gray-500 mb-3">{cls.name}</p>
+                )}
+                <p className="text-gray-600">
+                  {cls.student_count} {cls.student_count === 1 ? 'student' : 'students'}
+                </p>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Normal course view (with class context for teachers, or for students)
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
-      <Breadcrumb
-        items={[
-          { label: 'Courses', path: '/courses' },
-          { label: course.title },
-        ]}
-      />
+      <Breadcrumb items={breadcrumbItems} />
+
+      {classId && className && profile?.role === 'teacher' && (
+        <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 flex justify-between items-center">
+          <p className="text-sm text-blue-800">
+            Teaching: <span className="font-semibold">{className}</span>
+          </p>
+          <button
+            onClick={() => navigate(`/courses/${courseId}`)}
+            className="text-sm text-blue-600 hover:text-blue-800 underline"
+          >
+            Switch Class
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2">
@@ -173,7 +379,11 @@ const CourseDetailPage: React.FC = () => {
         </div>
 
         <div className="lg:col-span-1">
-          <CourseNavigation topics={topics} courseId={courseId!} />
+          <CourseNavigation 
+            topics={topics} 
+            courseId={courseId!}
+            classId={classId} 
+          />
         </div>
       </div>
     </div>

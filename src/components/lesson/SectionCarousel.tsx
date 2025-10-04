@@ -5,9 +5,11 @@ import SectionRenderer from './SectionRenderer';
 export default function SectionCarousel({
   lessonId,
   latexSource,
+  classId, // NEW: Accept classId prop
 }: {
   lessonId: string;
   latexSource: string;
+  classId?: string; // NEW: Optional classId for class-aware context
 }) {
   const sections = useMemo(() => splitIntoSections(latexSource), [latexSource]);
   const [idx, setIdx] = useState(0);
@@ -41,6 +43,7 @@ export default function SectionCarousel({
           lessonId={lessonId}
           bodyHtml={current.bodyHtml}
           slotStart={slotStart}
+          classId={classId} // NEW: Pass classId through
         />
       )}
 

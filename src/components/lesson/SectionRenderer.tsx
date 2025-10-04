@@ -5,11 +5,12 @@ import CanvasSlot from '../canvas/CanvasSlot';
 
 type Props = {
   lessonId: string;
+  classId?: string;  // NEW: class context from URL
   bodyHtml: string;
   slotStart?: number;  // base slot index for this section
 };
 
-export function SectionRenderer({bodyHtml, lessonId, slotStart = 0}: Props) {
+export function SectionRenderer({bodyHtml, lessonId, classId, slotStart = 0}: Props) {
   // Updated regex to handle 'student' and 'class' canvas types
   const tokens: Array<{html?: string, type?: 'student' | 'class'}> = [];
   const regex = /<div data-canvas="(student|class)"><\/div>/g;
@@ -45,6 +46,7 @@ export function SectionRenderer({bodyHtml, lessonId, slotStart = 0}: Props) {
             lessonId={lessonId}
             slotIndex={slotIndex}
             canvasType={canvasType}
+            classId={classId}  // NEW: pass classId through to CanvasSlot
             className="mb-2"
           />
         );

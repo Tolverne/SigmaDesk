@@ -1,18 +1,46 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import { Course } from '../types/course.types';
 
 interface CourseCardProps {
   course: Course;
   isEnrolled?: boolean;
   className?: string;
+  lastLessonId?: string; // Optional: if tracking "continue where you left off"
 }
 
-const CourseCard: React.FC<CourseCardProps> = ({ course, isEnrolled, className }) => {
+const CourseCard: React.FC<CourseCardProps> = ({ 
+  course, 
+  isEnrolled, 
+  className,
+  lastLessonId 
+}) => {
   const navigate = useNavigate();
+  const { profile } = useAuth();
 
   const handleClick = () => {
     if (isEnrolled) {
+      navigate(`/courses/${course.id}`);
+    }
+  };
+
+  const handleContinueLearning = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    if (!isEnrolled) return;
+
+    // If there's a last lesson to continue from
+    if (lastLessonId) {
+      if (profile?.role === 'teacher') {
+        // Teachers go to class selector first
+        navigate(`/courses/${course.id}/classes`);
+      } else {
+        // Students use the redirect route (will auto-add their class)
+        navigate(`/courses/${course.id}/lessons/${lastLessonId}`);
+      }
+    } else {
+      // No specific lesson, go to course overview
       navigate(`/courses/${course.id}`);
     }
   };
@@ -72,10 +100,7 @@ const CourseCard: React.FC<CourseCardProps> = ({ course, isEnrolled, className }
         <div className="mt-4">
           {isEnrolled ? (
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                navigate(`/courses/${course.id}`);
-              }}
+              onClick={handleContinueLearning}
               className="w-full px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
             >
               Continue Learning
