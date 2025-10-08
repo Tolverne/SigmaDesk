@@ -1,59 +1,94 @@
 import { supabase } from '../utils/supabase';
 import type { CanvasSession, CanvasStroke, CanvasType } from '../types/canvas.types';
 
+// --- Auth helper -------------------------------------------------------------
+
+async function getAuthUidOrThrow(): Promise<string> {
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data?.user?.id) {
+    throw new Error('[canvasService] No authenticated user (auth.uid())');
+  }
+  return data.user.id;
+}
+
+// --- Public service ----------------------------------------------------------
+
 export const canvasService = {
+  /**
+   * Create a canvas session (forces user_id = auth.uid()).
+   * NOTE: The userId argument is ignored if it differs from auth.uid().
+   */
   async createCanvasSession(
     lessonId: string,
     userId: string,
     slotIndex: number,
     canvasType?: CanvasType
   ): Promise<CanvasSession> {
-    const payload: any = {
+    const authUid = await getAuthUidOrThrow();
+    if (userId && userId !== authUid) {
+      console.warn('[canvasService.createCanvasSession] userId param ≠ auth.uid(); overriding', {
+        paramUserId: userId,
+        authUid,
+      });
+    }
+
+    const payload: Partial<CanvasSession> = {
       lesson_id: lessonId,
-      user_id: userId,
+      user_id: authUid, // ✅ force match RLS
       slot_index: slotIndex,
       title: `Canvas ${slotIndex + 1} for Lesson ${lessonId.slice(0, 8)}`,
+      ...(canvasType ? { canvas_type: canvasType } : {}),
     };
-    if (canvasType) payload.canvas_type = canvasType;
 
     console.log('[canvasService.createCanvasSession] inserting session', payload);
 
-    const { data, error } = await supabase
-      .from('canvas_sessions')
-      .insert(payload)
-      .select()
-      .single();
+    // ⬇️ No SELECT/RETURNING here; we'll fetch in a separate query.
+    const { error } = await supabase.from('canvas_sessions').insert([payload]);
 
     if (error) {
+      // Unique-constraint conflict: fall back to read
       if ((error as any).code === '23505') {
         console.log('[canvasService.createCanvasSession] duplicate → fetching existing');
-        return this.getCanvasSession(lessonId, userId, slotIndex, canvasType);
+        return this.getCanvasSession(lessonId, authUid, slotIndex, canvasType);
       }
       console.error('[canvasService.createCanvasSession] error:', error);
       throw error;
     }
-    console.log('[canvasService.createCanvasSession] created OK', data?.id);
-    return data as CanvasSession;
+
+    // Now fetch with a separate SELECT (governed by SELECT policy)
+    return this.getCanvasSession(lessonId, authUid, slotIndex, canvasType);
   },
 
+  /**
+   * Get a canvas session for the (lesson, auth.uid, slot[, type]).
+   * If not found, will create it.
+   */
   async getCanvasSession(
     lessonId: string,
     userId: string,
     slotIndex: number,
     canvasType?: CanvasType
   ): Promise<CanvasSession> {
+    const authUid = await getAuthUidOrThrow();
+    if (userId && userId !== authUid) {
+      console.warn('[canvasService.getCanvasSession] userId param ≠ auth.uid(); overriding', {
+        paramUserId: userId,
+        authUid,
+      });
+    }
+
     let q = supabase
       .from('canvas_sessions')
       .select('*')
       .eq('lesson_id', lessonId)
-      .eq('user_id', userId)
+      .eq('user_id', authUid) // ✅ match the RLS-checked user
       .eq('slot_index', slotIndex);
 
     if (canvasType) q = q.eq('canvas_type', canvasType);
 
     console.log('[canvasService.getCanvasSession] querying', {
       lessonId,
-      userId,
+      userId: authUid,
       slotIndex,
       canvasType: canvasType ?? '(any)',
     });
@@ -61,31 +96,29 @@ export const canvasService = {
     const { data, error } = await q.single();
 
     if (error) {
+      // PGRST116 = No rows found for .single()
       if ((error as any).code === 'PGRST116') {
         console.log('[canvasService.getCanvasSession] not found → creating');
-        return this.createCanvasSession(lessonId, userId, slotIndex, canvasType);
+        return this.createCanvasSession(lessonId, authUid, slotIndex, canvasType);
       }
       console.error('[canvasService.getCanvasSession] error:', error);
       throw error;
     }
-    console.log('[canvasService.getCanvasSession] found', data?.id);
+    console.log('[canvasService.getCanvasSession] found', (data as any)?.id);
     return data as CanvasSession;
   },
 
+  /**
+   * Convenience wrapper. Internally always uses auth.uid().
+   */
   async getOrCreateSession(
     lessonId: string,
-    userId: string,
+    userId: string, // kept for compatibility, ignored if mismatched
     slotIndex: number,
     canvasType: CanvasType = 'student'
   ): Promise<CanvasSession> {
-    try {
-      return await this.getCanvasSession(lessonId, userId, slotIndex, canvasType);
-    } catch (err: any) {
-      if ((err as any).code === 'PGRST116') {
-        return this.createCanvasSession(lessonId, userId, slotIndex, canvasType);
-      }
-      throw err;
-    }
+    const authUid = await getAuthUidOrThrow();
+    return this.getCanvasSession(lessonId, authUid, slotIndex, canvasType);
   },
 
   async getCanvasSessionById(sessionId: string): Promise<CanvasSession> {
@@ -125,6 +158,7 @@ export const canvasService = {
       throw error;
     }
 
+    // Fire-and-forget bump of parent session's updated_at
     void supabase
       .from('canvas_sessions')
       .update({ updated_at: new Date().toISOString() })
@@ -196,7 +230,7 @@ export const canvasService = {
 
     if (!sessions || sessions.length === 0) return [];
 
-    const userIds = Array.from(new Set(sessions.map((s: any) => s.user_id).filter(Boolean)));
+    const userIds = Array.from(new Set((sessions as any[]).map((s: any) => s.user_id).filter(Boolean)));
     let namesById: Record<string, string> = {};
 
     if (userIds.length > 0) {
@@ -208,7 +242,7 @@ export const canvasService = {
       if (profErr) {
         console.warn('[canvasService] profiles fetch failed in getStudentSessions:', profErr.message);
       } else if (profiles) {
-        namesById = profiles.reduce((acc: Record<string, string>, p: any) => {
+        namesById = (profiles as any[]).reduce((acc: Record<string, string>, p: any) => {
           acc[p.id] = p.full_name || 'Unknown';
           return acc;
         }, {});
@@ -216,13 +250,14 @@ export const canvasService = {
     }
 
     return (sessions as any[]).map((s) => ({
-      ...s,
-      user_name: namesById[s.user_id] || 'Unknown',
+      ...(s as any),
+      user_name: namesById[(s as any).user_id] || 'Unknown',
     }));
   },
 };
 
-// --- IndexedDB Offline Service ---
+// --- IndexedDB Offline Service ----------------------------------------------
+
 export const offlineCanvasService = {
   dbName: 'SigmaCanvas',
   version: 2,
@@ -324,7 +359,7 @@ export const offlineCanvasService = {
   },
 };
 
-// --- Canvas View Resolution Types and Functions ---
+// --- Canvas view resolution & helpers ---------------------------------------
 
 export type ViewerRole = 'teacher' | 'student';
 
@@ -334,10 +369,7 @@ export type ResolvedCanvasView =
 
 const TEACHER_TYPE_DB: CanvasType = 'class';
 
-// REMOVED: getClassIdForLessonAndUser - no longer needed with class-aware URLs
-// REMOVED: getTeacherClassForLesson - no longer needed with class-aware URLs
-
-// KEPT: Helper for students to find their class (used in LessonRedirect and resolveCanvasViewForUser)
+// Helper: RPC to resolve a student's class for a given lesson
 export async function getStudentClassForLesson(
   studentId: string,
   lessonId: string
@@ -347,7 +379,7 @@ export async function getStudentClassForLesson(
       student_user_id: studentId,
       lesson_id_param: lessonId,
     });
-    
+
     if (error) {
       console.warn('[canvasService] get_student_class_for_lesson RPC failed:', error.message);
       return null;
@@ -360,23 +392,23 @@ export async function getStudentClassForLesson(
 }
 
 async function getLatestClassSessionForSlot(
-  lessonId: string, 
+  lessonId: string,
   slotIndex: number,
   classId?: string
 ): Promise<CanvasSession | null> {
   console.log('[resolver] getLatestClassSessionForSlot', { lessonId, slotIndex, classId, type: TEACHER_TYPE_DB });
-  
+
   let query = supabase
     .from('canvas_sessions')
     .select('*')
     .eq('lesson_id', lessonId)
     .eq('slot_index', slotIndex)
     .eq('canvas_type', TEACHER_TYPE_DB);
-  
+
   if (classId) {
     query = query.eq('class_id', classId);
   }
-  
+
   const { data, error } = await query
     .order('updated_at', { ascending: false })
     .limit(1)
@@ -389,16 +421,13 @@ async function getLatestClassSessionForSlot(
   return (data as CanvasSession) ?? null;
 }
 
-async function isTeacherForClass(
-  userId: string,
-  classId: string
-): Promise<boolean> {
+async function isTeacherForClass(userId: string, classId: string): Promise<boolean> {
   try {
     const { data, error } = await supabase.rpc('is_teacher_for_class', {
-      check_user_id: userId,  // CHANGED: was user_id
+      check_user_id: userId,
       check_class_id: classId,
     });
-    
+
     if (error) {
       console.warn('[canvasService] is_teacher_for_class RPC failed:', error.message);
       return false;
@@ -418,6 +447,11 @@ async function getOrCreateClassCanvas(
 ): Promise<CanvasSession> {
   console.log('[canvasService] getOrCreateClassCanvas', { lessonId, classId, slotIndex });
 
+  const authUid = await getAuthUidOrThrow();
+  if (teacherId && teacherId !== authUid) {
+    console.warn('[canvasService.getOrCreateClassCanvas] teacherId ≠ auth.uid(); overriding', { teacherId, authUid });
+  }
+
   const { data: existing, error: fetchError } = await supabase
     .from('canvas_sessions')
     .select('*')
@@ -432,30 +466,49 @@ async function getOrCreateClassCanvas(
   }
 
   if (existing) {
-    console.log('[canvasService] found existing class canvas:', existing.id);
+    console.log('[canvasService] found existing class canvas:', (existing as any).id);
     return existing as CanvasSession;
   }
 
-  const { data: created, error: createError } = await supabase
-    .from('canvas_sessions')
-    .insert({
+  // ⬇️ Insert without returning, then fetch separately
+  const { error: createError } = await supabase.from('canvas_sessions').insert([
+    {
       lesson_id: lessonId,
-      user_id: teacherId,
+      user_id: authUid, // ✅ must match RLS: is_teacher_for_class(auth.uid(), class_id)
       class_id: classId,
       slot_index: slotIndex,
       canvas_type: 'class',
       title: `Class Canvas ${slotIndex + 1}`,
-    })
-    .select()
-    .single();
+    },
+  ]);
 
   if (createError) {
     console.error('[canvasService] failed to create class canvas:', createError);
     throw createError;
   }
 
-  console.log('[canvasService] created new class canvas:', created.id);
-  return created as CanvasSession;
+  const { data: createdRow, error: fetchCreatedErr } = await supabase
+    .from('canvas_sessions')
+    .select('*')
+    .eq('lesson_id', lessonId)
+    .eq('class_id', classId)
+    .eq('slot_index', slotIndex)
+    .eq('canvas_type', 'class')
+    .maybeSingle();
+
+  if (fetchCreatedErr && (fetchCreatedErr as any).code !== 'PGRST116') {
+    throw fetchCreatedErr;
+  }
+
+  if (!createdRow) {
+    // Very unlikely race; fetch the latest instead
+    const fallback = await getLatestClassSessionForSlot(lessonId, slotIndex, classId);
+    if (!fallback) throw new Error('[canvasService] class canvas insert succeeded but row not visible via SELECT');
+    return fallback;
+  }
+
+  console.log('[canvasService] created new class canvas:', (createdRow as any).id);
+  return createdRow as CanvasSession;
 }
 
 async function getAllStudentSessionsForSlot(
@@ -477,7 +530,7 @@ async function getAllStudentSessionsForSlot(
     return [];
   }
 
-  const userIds = Array.from(new Set(sessions.map((s: any) => s.user_id).filter(Boolean)));
+  const userIds = Array.from(new Set((sessions as any[]).map((s: any) => s.user_id).filter(Boolean)));
   let namesById: Record<string, string> = {};
 
   if (userIds.length > 0) {
@@ -489,7 +542,7 @@ async function getAllStudentSessionsForSlot(
     if (profErr) {
       console.warn('[canvasService] profiles lookup failed:', profErr.message);
     } else if (profiles) {
-      namesById = profiles.reduce((acc: Record<string, string>, p: any) => {
+      namesById = (profiles as any[]).reduce((acc: Record<string, string>, p: any) => {
         acc[p.id] = p.full_name || 'Unknown';
         return acc;
       }, {});
@@ -497,25 +550,23 @@ async function getAllStudentSessionsForSlot(
   }
 
   const result = (sessions as any[]).map((s) => ({
-    ...s,
-    user_name: namesById[s.user_id] || 'Unknown',
+    ...(s as any),
+    user_name: namesById[(s as any).user_id] || 'Unknown',
   }));
 
   console.log('[canvasService] Student sessions for slot', { lessonId, slotIndex, count: result.length });
   return result;
 }
 
-export async function resolveCanvasViewForUser(
-  params: {
-    lessonId: string;
-    slotIndex: number;
-    canvasType: CanvasType;
-    viewerUserId: string;
-    viewerRole: ViewerRole;
-    classId?: string;
-    createIfMissing?: boolean;
-  }
-): Promise<ResolvedCanvasView | null> {
+export async function resolveCanvasViewForUser(params: {
+  lessonId: string;
+  slotIndex: number;
+  canvasType: CanvasType;
+  viewerUserId: string;
+  viewerRole: ViewerRole;
+  classId?: string;
+  createIfMissing?: boolean;
+}): Promise<ResolvedCanvasView | null> {
   const {
     lessonId,
     slotIndex,
@@ -544,7 +595,7 @@ export async function resolveCanvasViewForUser(
   // CLASS canvas slot
   if (canvasType === 'class') {
     if (viewerRole === 'student') {
-      const studentClassId = classId || await getStudentClassForLesson(viewerUserId, lessonId);
+      const studentClassId = classId || (await getStudentClassForLesson(viewerUserId, lessonId));
 
       if (!studentClassId) {
         console.warn('[resolver] Student not enrolled in class for this lesson');
@@ -553,10 +604,10 @@ export async function resolveCanvasViewForUser(
 
       const session = await getLatestClassSessionForSlot(lessonId, slotIndex, studentClassId);
       if (!session && createIfMissing) {
+        // Students cannot create class canvases; return null (read-only view).
         return null;
       }
       return session ? { kind: 'single', session, readOnly: true } : null;
-      
     } else {
       // Teacher must have classId from URL
       if (!classId) {
@@ -582,7 +633,7 @@ export async function resolveCanvasViewForUser(
 }
 
 export async function getClassCanvasSessionIds(
-  lessonId: string, 
+  lessonId: string,
   slotIndex: number,
   classId?: string
 ): Promise<string[]> {
@@ -592,7 +643,7 @@ export async function getClassCanvasSessionIds(
     .eq('lesson_id', lessonId)
     .eq('slot_index', slotIndex)
     .eq('canvas_type', 'class');
-  
+
   if (classId) {
     query = query.eq('class_id', classId);
   }
@@ -614,7 +665,9 @@ export async function getMergedStrokesForSessions(sessionIds: string[]): Promise
 
   const { data, error } = await supabase
     .from('canvas_strokes')
-    .select('id, session_id, stroke_data, tool_type, stroke_color, stroke_width, timestamp_ms, stroke_order, created_at')
+    .select(
+      'id, session_id, stroke_data, tool_type, stroke_color, stroke_width, timestamp_ms, stroke_order, created_at'
+    )
     .in('session_id', sessionIds)
     .order('stroke_order', { ascending: true, nullsFirst: true })
     .order('created_at', { ascending: true, nullsFirst: true });
@@ -638,7 +691,11 @@ export async function getMergedStrokesForSessions(sessionIds: string[]): Promise
   const parsed: CanvasStroke[] = rows.map((r) => {
     let sd: any = r.stroke_data;
     if (sd && typeof sd === 'string') {
-      try { sd = JSON.parse(sd); } catch { /* invalid JSON */ }
+      try {
+        sd = JSON.parse(sd);
+      } catch {
+        /* ignore invalid JSON */
+      }
     }
     return {
       id: r.id,
