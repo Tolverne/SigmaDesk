@@ -83,28 +83,45 @@ const LoginPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleGoogleLogin = async () => {
-    try {
-      setIsLoggingIn(true);
-      setErrorMsg(null);
+ const handleGoogleLogin = async () => {
+   try {
+     setIsLoggingIn(true);
+     setErrorMsg(null);
+     const redirectTo = `${window.location.origin}/`;
+     const { error } = await supabase.auth.signInWithOAuth({
+       provider: 'google',
+       options: {
+         redirectTo, // return to '/'
+         queryParams: { access_type: 'offline', prompt: 'consent' },
+       },
+     });
+     if (error) throw error;
+   } catch (error: any) {
+     console.error('Google login error:', error);
+     setErrorMsg(error?.message || 'Unknown Google login error.');
+     setIsLoggingIn(false);
+   }
+ };
 
-      const redirectTo = `${window.location.origin}/`;
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo,
-          queryParams: { access_type: 'offline', prompt: 'consent' },
-        },
-      });
-      if (error) throw error;
-      // Browser will redirect away; code after this typically won't run.
-    } catch (error: any) {
-      console.error('Error during login:', error);
-      setErrorMsg(error?.message || 'Unknown login error.');
-    } finally {
-      setIsLoggingIn(false);
-    }
-  };
+ const handleMicrosoftLogin = async () => {
+   try {
+     setIsLoggingIn(true);
+     setErrorMsg(null);
+     const redirectTo = `${window.location.origin}/`;
+     const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'azure',
+       options: {
+        // either let Supabase use your Site URL OR add redirectTo: `${window.location.origin}/`
+       scopes: 'email', // 👈 REQUIRED so Supabase receives an email
+       },
+     });
+     if (error) throw error;
+   } catch (error: any) {
+     console.error('Microsoft login error:', error);
+     setErrorMsg(error?.message || 'Unknown Microsoft login error.');
+     setIsLoggingIn(false);
+   }
+ };
 
   if (loading) {
     return (
@@ -132,18 +149,35 @@ const LoginPage: React.FC = () => {
             </div>
           )}
 
+          {/* Google */}
           <button
             onClick={handleGoogleLogin}
             disabled={isLoggingIn}
             className="w-full px-4 py-3 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
           >
-            <svg className="w-5 h-5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <svg className="w-5 h-5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
               <path fill="#ffffff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
               <path fill="#ffffff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
               <path fill="#ffffff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
               <path fill="#ffffff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
             </svg>
             <span>{isLoggingIn ? 'Signing in...' : 'Sign in with Google'}</span>
+          </button>
+
+          {/* Microsoft */}
+          <button
+            onClick={handleMicrosoftLogin}
+            disabled={isLoggingIn}
+            className="mt-3 w-full px-4 py-3 bg-gray-800 text-white rounded-md hover:bg-gray-900 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+          >
+            {/* Simple MS logo: 4 squares */}
+            <svg className="w-5 h-5" viewBox="0 0 24 24" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+              <rect x="2" y="2" width="9" height="9" fill="white" />
+              <rect x="13" y="2" width="9" height="9" fill="white" />
+              <rect x="2" y="13" width="9" height="9" fill="white" />
+              <rect x="13" y="13" width="9" height="9" fill="white" />
+            </svg>
+            <span>{isLoggingIn ? 'Signing in...' : 'Sign in with Microsoft'}</span>
           </button>
 
           <div className="mt-6 text-center text-sm text-gray-500">
