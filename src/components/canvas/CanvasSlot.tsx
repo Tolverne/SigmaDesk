@@ -18,7 +18,7 @@ type CanvasSlotProps = {
   lessonId: string;
   slotIndex: number;
   canvasType: CanvasType; // 'student' | 'class'
-  classId?: string; // Class context from URL (required for class canvases)
+  classId?: string;       // Class context from URL (required for class canvases & feedback/locks)
 };
 
 const roleFromString = (s?: string): ViewerRole => (s === 'teacher' ? 'teacher' : 'student');
@@ -28,7 +28,7 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
   lessonId,
   slotIndex,
   canvasType,
-  classId, // Use classId directly from prop
+  classId, // provided by the route; we will pass this through
 }) => {
   const { user } = useAuth();
   const viewerUserId = user?.id || '';
@@ -82,32 +82,28 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
         setViewLoading(true);
         setErrMsg(null);
 
-
-
-
-        
         const uid = viewerUserId || 'anonymous';
 
-            // In CanvasSlot.tsx, in the useEffect that resolves the view
-            console.log('[CanvasSlot DEBUG]', {
-            lessonId,
-            slotIndex,
-            canvasType,
-            viewerRole,
-            classId,
-            viewerUserId: uid
-            });
+        // DEBUG
+        console.log('[CanvasSlot DEBUG]', {
+          lessonId,
+          slotIndex,
+          canvasType,
+          viewerRole,
+          classId,
+          viewerUserId: uid
+        });
 
-            const v = await resolveCanvasViewForUser({
-            lessonId,
-            slotIndex,
-            canvasType,
-            viewerUserId: uid,
-            viewerRole,
-            classId: classId,
-            });
+        const v = await resolveCanvasViewForUser({
+          lessonId,
+          slotIndex,
+          canvasType,
+          viewerUserId: uid,
+          viewerRole,
+          classId, // pass class context to resolver if it uses it
+        } as any);
 
-            console.log('[CanvasSlot DEBUG] Result:', v);
+        console.log('[CanvasSlot DEBUG] Result:', v);
 
         if (cancelled) return;
         setView(v || null);
@@ -186,6 +182,9 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
           sessions={view.sessions}
           lessonId={lessonId}
           slotIndex={slotIndex}
+          // ⬇️ IMPORTANT: pass classId so feedback/locks work
+          classId={classId}
+          // (optional but useful) pass courseId if resolved
           courseId={courseId ?? undefined}
         />
       </div>
@@ -202,35 +201,50 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
   const enforcedReadOnly =
     view.readOnly || (viewerRole === 'student' && isClassCanvasView);
 
-if (viewerRole === 'student' && isClassCanvasView) {
-  console.log('[CanvasSlot] Student viewing class canvas', {
-    classIdsLoading,
-    classSessionIds,
-    sessionId,
-    hasClassSessionIds: !!(classSessionIds && classSessionIds.length)
-  });
+  if (viewerRole === 'student' && isClassCanvasView) {
+    console.log('[CanvasSlot] Student viewing class canvas', {
+      classIdsLoading,
+      classSessionIds,
+      sessionId,
+      hasClassSessionIds: !!(classSessionIds && classSessionIds.length)
+    });
 
-  if (classIdsLoading) {
-    return <div className={className}><div className="text-sm text-gray-500 py-2">Loading class board…</div></div>;
+    if (classIdsLoading) {
+      return <div className={className}><div className="text-sm text-gray-500 py-2">Loading class board…</div></div>;
+    }
+    if (classSessionIds && classSessionIds.length) {
+      console.log('[CanvasSlot] Rendering CanvasPlayback with classSessionIds:', classSessionIds);
+      return <CanvasPlayback sessionIds={classSessionIds} className={className} initialFull />;
+    }
+    if (sessionId) {
+      console.log('[CanvasSlot] Rendering CanvasPlayback with single sessionId:', sessionId);
+      return <CanvasPlayback sessionIds={[sessionId]} className={className} initialFull />;
+    }
+    console.log('[CanvasSlot] Falling through to "Nothing to show"');
+    return <div className={className}><div className="text-sm text-gray-500 py-2">Nothing to show here yet.</div></div>;
   }
-if (classSessionIds && classSessionIds.length) {
-  console.log('[CanvasSlot] Rendering CanvasPlayback with classSessionIds:', classSessionIds);
-  // REMOVED pointer-events-none - playback controls need to be clickable
-  return <CanvasPlayback sessionIds={classSessionIds} className={className} initialFull />;
-}
-if (sessionId) {
-  console.log('[CanvasSlot] Rendering CanvasPlayback with single sessionId:', sessionId);
-  // REMOVED pointer-events-none
-  return <CanvasPlayback sessionIds={[sessionId]} className={className} initialFull />;
-}
-  console.log('[CanvasSlot] Falling through to "Nothing to show"');
-  return <div className={className}><div className="text-sm text-gray-500 py-2">Nothing to show here yet.</div></div>;
-}
 
   // Default: live canvas
+  const shouldPassLockContext =
+    viewerRole === 'student' && canvasType === 'student' && !!classId;
+
   return (
     <div className={className}>
-      <CanvasWorkspace sessionId={sessionId!} isReadOnly={!!enforcedReadOnly} />
+      <CanvasWorkspace
+        sessionId={sessionId!}
+        isReadOnly={!!enforcedReadOnly}
+        // ⬇️ IMPORTANT: pass lockContext so student locks apply while drawing
+        {...(shouldPassLockContext
+          ? {
+              lockContext: {
+                classId: classId!,
+                lessonId,
+                slotIndex,
+                studentId: viewerUserId,
+              },
+            }
+          : {})}
+      />
     </div>
   );
 };

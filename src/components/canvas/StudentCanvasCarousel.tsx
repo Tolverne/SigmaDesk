@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 
 type Props = {
-  sessions: (CanvasSession & { user_name?: string })[];
+  sessions: (CanvasSession & { user_name?: string; display_name?: string })[];
   /** Optional class scope; if omitted, we'll infer the student's class per-lesson as needed. */
   classId?: string;
   /** Optional course; if omitted we resolve from lesson via topics. */
@@ -54,6 +54,10 @@ const StudentCanvasCarousel: React.FC<Props> = ({
   lessonId,
   slotIndex,
 }) => {
+  console.debug('[StudentCanvasCarousel props]', {
+    classId, courseId, lessonId, slotIndex, sessions: sessions?.length,
+  });
+
   const [idx, setIdx] = useState(0);
   const [showPlayback, setShowPlayback] = useState(false);
 
@@ -93,20 +97,19 @@ const StudentCanvasCarousel: React.FC<Props> = ({
 
   // Helper: resolve a class id for a specific student (via RPC, then fallback)
   const resolveClassForStudent = async (lesson_id: string, student_id: string): Promise<string | null> => {
-    // 1) RPC path (if you created public.resolve_current_class_for_student)
+    // 1) RPC path (if created server-side)
     try {
       const { data, error } = await supabase.rpc('resolve_current_class_for_student', {
         _lesson_id: lesson_id,
         _student_id: student_id,
       });
       if (!error && data) return data as string;
-    } catch (e) {
-      // ignore; we'll fallback
+    } catch {
+      // ignore; fallback below
     }
 
-    // 2) Fallback: client-side joins: lessons -> topics -> course_id, then latest enrollment
+    // 2) Fallback: lessons -> topics -> courses -> latest enrollment in that course
     try {
-      // Ensure we have a course id
       let course = resolvedCourseId;
       if (!course) {
         const { data: d2 } = await supabase
@@ -134,6 +137,7 @@ const StudentCanvasCarousel: React.FC<Props> = ({
   };
 
   // Keep a derived "current class id" that always tries to be ready for the selected student
+  // undefined → still resolving; null → resolved but none; string → found.
   const [currentClassId, setCurrentClassId] = useState<string | null | undefined>(undefined);
   useEffect(() => {
     let cancelled = false;
@@ -154,7 +158,8 @@ const StudentCanvasCarousel: React.FC<Props> = ({
       setCurrentClassId(cid);
     })();
     return () => { cancelled = true; };
-  }, [current?.user_id, resolvedLessonId]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.user_id, resolvedLessonId]);
 
   // Teacher config + entries + locks state (only when explicit classId is supplied)
   const [config, setConfig] = useState<FeedbackConfig | null>(null);
@@ -240,7 +245,37 @@ const StudentCanvasCarousel: React.FC<Props> = ({
 
   const fbType: FeedbackType = config?.feedback_type ?? 'none';
 
-  // Config handlers (class-scoped toolbar)
+  // ---------- Per-student feedback editor state ----------
+  const [kind, setKind] = useState<FeedbackType>('none');
+  const [draftMarks, setDraftMarks] = useState<string>('');
+  const [draftLetter, setDraftLetter] = useState<string>('A');
+  const [draftComment, setDraftComment] = useState<string>('');
+
+  useEffect(() => {
+    setDraftMarks(currentEntry?.marks != null ? String(currentEntry.marks) : '');
+    setDraftLetter(currentEntry?.letter || 'A');
+    setDraftComment(currentEntry?.comment || '');
+    // When we have a class-scoped config, the active type is the config; otherwise it's local kind (set below via dropdown)
+    if (classScopedControls) setKind(fbType);
+  }, [currentEntry?.id, fbType, classScopedControls]);
+
+  const activeKind: FeedbackType = classScopedControls ? fbType : kind;
+
+  // ---------- Toolbar controls (ALWAYS visible) ----------
+  const toolbarEnabled = !!classId; // release/lock/max-marks only when classId provided
+  const feedbackSelectValue: FeedbackType = toolbarEnabled ? (config?.feedback_type ?? 'none') : (kind ?? 'none');
+
+  const onFeedbackSelectChange = (val: FeedbackType) => {
+    if (toolbarEnabled) {
+      // Persist class-scoped type
+      handleSaveConfig({ feedback_type: val });
+    } else {
+      // Drive local editor when no classId
+      setKind(val);
+    }
+  };
+
+  // Config handlers (persist only when class-scoped)
   const handleSaveConfig = async (next: Partial<FeedbackConfig>) => {
     if (!classScopedControls || !classId) return;
     try {
@@ -274,21 +309,7 @@ const StudentCanvasCarousel: React.FC<Props> = ({
     }
   };
 
-  // ---------- Per-student feedback editor (works with explicit classId OR resolved per-student class) ----------
-  const [kind, setKind] = useState<FeedbackType>('none');
-  const [draftMarks, setDraftMarks] = useState<string>('');
-  const [draftLetter, setDraftLetter] = useState<string>('A');
-  const [draftComment, setDraftComment] = useState<string>('');
-
-  useEffect(() => {
-    setDraftMarks(currentEntry?.marks != null ? String(currentEntry.marks) : '');
-    setDraftLetter(currentEntry?.letter || 'A');
-    setDraftComment(currentEntry?.comment || '');
-    setKind(classScopedControls ? fbType : 'none');
-  }, [currentEntry?.id, fbType, classScopedControls]);
-
-  const activeKind: FeedbackType = classScopedControls ? fbType : kind;
-
+  // ---------- Save/toggles per student (works with explicit classId OR resolved per-student class) ----------
   const ensureEffectiveClassId = async (): Promise<string | null> => {
     // Prefer explicit classId prop
     if (classId) return classId;
@@ -409,112 +430,111 @@ const StudentCanvasCarousel: React.FC<Props> = ({
 
   return (
     <div className="space-y-4">
-      {/* Class-scoped settings toolbar (only if explicit classId provided) */}
-      {classScopedControls && (
-        <div className="bg-white border border-gray-200 rounded-lg p-3">
-          <div className="flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2">
-                <Settings className="w-4 h-4 text-gray-500" />
-                <span className="text-sm text-gray-700">Feedback</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full ${roleBadge(fbType)}`}>
-                  {fbType.toUpperCase()}
-                </span>
-              </div>
+      {/* Activity Feedback toolbar (always shown; release/lock/max-marks disabled if no classId) */}
+      <div className="bg-white border border-gray-200 rounded-lg p-3">
+        <div className="flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Settings className="w-4 h-4 text-gray-500" />
+              <span className="text-sm text-gray-700">Feedback</span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full ${roleBadge(feedbackSelectValue)}`}>
+                {feedbackSelectValue.toUpperCase()}
+              </span>
+            </div>
 
-              <select
-                disabled={configSaving}
-                className="px-2 py-1 border rounded-md text-sm"
-                value={fbType}
-                onChange={(e) => handleSaveConfig({ feedback_type: e.target.value as FeedbackType })}
-              >
-                <option value="none">None</option>
-                <option value="marks">Marks</option>
-                <option value="letter">Letter</option>
-                <option value="text">Text</option>
-                <option value="rubric" disabled>Rubric (soon)</option>
-              </select>
+            <select
+              disabled={configSaving}
+              className="px-2 py-1 border rounded-md text-sm"
+              value={feedbackSelectValue}
+              onChange={(e) => onFeedbackSelectChange(e.target.value as FeedbackType)}
+            >
+              <option value="none">None</option>
+              <option value="marks">Marks</option>
+              <option value="letter">Letter</option>
+              <option value="text">Text</option>
+              <option value="rubric" disabled>Rubric (soon)</option>
+            </select>
 
-              {fbType === 'marks' && (
+                {feedbackSelectValue === 'marks' && (
                 <div className="flex items-center gap-1">
-                  <span className="text-sm text-gray-600">/</span>
-                  <input
-                    disabled={configSaving}
+                    <span className="text-sm text-gray-600">/</span>
+                    <input
+                    disabled={configSaving || !toolbarEnabled}
                     type="number"
                     step="0.5"
                     min="0"
                     className="w-24 px-2 py-1 border rounded-md text-sm"
                     placeholder="Max"
                     value={config?.max_marks ?? ''}
-                    onChange={(e) => handleSaveConfig({ max_marks: e.target.value === '' ? null : Number(e.target.value) })}
-                  />
+                    onChange={(e) => {
+                        onFeedbackSelectChange('marks');
+                        const v = e.target.value;
+                        handleSaveConfig({ max_marks: v === '' ? null : Number(v) });
+                    }}
+                    />
                 </div>
+                )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              disabled={!toolbarEnabled}
+              onClick={handleToggleReleaseAll}
+              className={`px-3 py-1 rounded-md text-sm border ${
+                config?.released ? 'bg-green-600 text-white border-green-700' : 'bg-white text-gray-700 hover:bg-gray-50'
+              }`}
+              title={toolbarEnabled ? 'Release feedback for this activity to all students' : 'Provide classId to enable'}
+            >
+              {config?.released ? (
+                <span className="inline-flex items-center gap-1"><CheckCircle2 className="w-4 h-4" /> Released</span>
+              ) : (
+                <span className="inline-flex items-center gap-1"><XCircle className="w-4 h-4" /> Not released</span>
               )}
-            </div>
+            </button>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={handleToggleReleaseAll}
-                className={`px-3 py-1 rounded-md text-sm border ${
-                  config?.released ? 'bg-green-600 text-white border-green-700' : 'bg-white text-gray-700 hover:bg-gray-50'
-                }`}
-                title="Release feedback for this activity to all students"
-              >
-                {config?.released ? (
-                  <span className="inline-flex items-center gap-1"><CheckCircle2 className="w-4 h-4" /> Released</span>
-                ) : (
-                  <span className="inline-flex items-center gap-1"><XCircle className="w-4 h-4" /> Not released</span>
-                )}
-              </button>
+            <button
+              disabled={!toolbarEnabled || classLockSaving}
+              onClick={handleToggleClassLock}
+              className={`px-3 py-1 rounded-md text-sm border ${
+                classLock?.locked ? 'bg-red-600 text-white border-red-700' : 'bg-white text-gray-700 hover:bg-gray-50'
+              }`}
+              title={toolbarEnabled ? 'Lock/unlock canvases for this class (this activity)' : 'Provide classId to enable'}
+            >
+              {classLock?.locked ? (
+                <span className="inline-flex items-center gap-1"><Lock className="w-4 h-4" /> Class Locked</span>
+              ) : (
+                <span className="inline-flex items-center gap-1"><Unlock className="w-4 h-4" /> Class Unlocked</span>
+              )}
+            </button>
 
-              <button
-                onClick={handleToggleClassLock}
-                className={`px-3 py-1 rounded-md text-sm border ${
-                  classLock?.locked ? 'bg-red-600 text-white border-red-700' : 'bg-white text-gray-700 hover:bg-gray-50'
-                }`}
-                title="Lock/unlock canvases for this class (this activity)"
-              >
-                {classLock?.locked ? (
-                  <span className="inline-flex items-center gap-1"><Lock className="w-4 h-4" /> Class Locked</span>
-                ) : (
-                  <span className="inline-flex items-center gap-1"><Unlock className="w-4 h-4" /> Class Unlocked</span>
-                )}
-              </button>
-
-              <button
-                onClick={() => setShowPlayback((v) => !v)}
-                className="px-3 py-1 rounded-md text-sm border bg-white text-gray-700 hover:bg-gray-50"
-              >
-                {showPlayback ? (
-                  <span className="inline-flex items-center gap-1"><ImageIcon className="w-4 h-4" /> Show Final</span>
-                ) : (
-                  <span className="inline-flex items-center gap-1"><PlayCircle className="w-4 h-4" /> Show Playback</span>
-                )}
-              </button>
-            </div>
+            <button
+              onClick={() => setShowPlayback((v) => !v)}
+              className="px-3 py-1 rounded-md text-sm border bg-white text-gray-700 hover:bg-gray-50"
+            >
+              {showPlayback ? (
+                <span className="inline-flex items-center gap-1"><ImageIcon className="w-4 h-4" /> Show Final</span>
+              ) : (
+                <span className="inline-flex items-center gap-1"><PlayCircle className="w-4 h-4" /> Show Playback</span>
+              )}
+            </button>
           </div>
         </div>
-      )}
 
-      {/* If not class-scoped, still provide a playback toggle */}
-      {!classScopedControls && (
-        <div className="flex items-center justify-end">
-          <button
-            onClick={() => setShowPlayback((v) => !v)}
-            className="px-3 py-1 rounded-md text-sm border bg-white text-gray-700 hover:bg-gray-50"
-          >
-            {showPlayback ? (
-              <span className="inline-flex items-center gap-1"><ImageIcon className="w-4 h-4" /> Show Final</span>
-            ) : (
-              <span className="inline-flex items-center gap-1"><PlayCircle className="w-4 h-4" /> Show Playback</span>
-            )}
-          </button>
-        </div>
-      )}
+        {!toolbarEnabled && (
+          <div className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+            Class-wide settings (release/lock, max marks) are disabled because no <code>classId</code> was provided.
+            You can still choose a feedback type above and save per-student feedback; the student’s class will be inferred.
+          </div>
+        )}
+      </div>
 
       {/* Student nav */}
       <div className="flex items-center justify-between">
-        <button className="px-2 py-1 border rounded disabled:opacity-50" onClick={() => setIdx((i) => Math.max(0, i - 1))} disabled={idx === 0}>
+        <button
+          className="px-2 py-1 border rounded disabled:opacity-50"
+          onClick={() => setIdx((i) => Math.max(0, i - 1))}
+          disabled={idx === 0}
+        >
           <ChevronLeft className="w-4 h-4" />
         </button>
 
@@ -524,7 +544,11 @@ const StudentCanvasCarousel: React.FC<Props> = ({
           <span className="font-semibold">{currentDisplayName}</span>
         </div>
 
-        <button className="px-2 py-1 border rounded disabled:opacity-50" onClick={() => setIdx((i) => Math.min(sessions.length - 1, i + 1))} disabled={idx >= sessions.length - 1}>
+        <button
+          className="px-2 py-1 border rounded disabled:opacity-50"
+          onClick={() => setIdx((i) => Math.min(sessions.length - 1, i + 1))}
+          disabled={idx >= sessions.length - 1}
+        >
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>
@@ -536,7 +560,7 @@ const StudentCanvasCarousel: React.FC<Props> = ({
         ) : (
           <CanvasWorkspace
             sessionId={current!.id}
-            isReadOnly={true}
+            isReadOnly={true} // teachers review only in the carousel
             lockContext={
               (classId ?? currentClassId) && current?.user_id
                 ? { classId: (classId ?? currentClassId)!, lessonId: resolvedLessonId, slotIndex: resolvedSlotIndex, studentId: current.user_id }
@@ -559,6 +583,7 @@ const StudentCanvasCarousel: React.FC<Props> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Per-student lock */}
             <button
               onClick={handleToggleStudentLock}
               className={`px-3 py-1 rounded-md text-sm border ${
@@ -573,6 +598,7 @@ const StudentCanvasCarousel: React.FC<Props> = ({
               )}
             </button>
 
+            {/* Student release toggle */}
             <button
               onClick={handleToggleStudentRelease}
               className={`px-3 py-1 rounded-md text-sm border ${
@@ -591,21 +617,13 @@ const StudentCanvasCarousel: React.FC<Props> = ({
 
         {/* Editor */}
         <div className="mt-4">
-          {!classScopedControls && (
-            <div className="mb-3">
-              <label className="block text-xs text-gray-600 mb-1">Feedback Type</label>
-              <select className="px-2 py-1 border rounded" value={activeKind} onChange={(e) => setKind(e.target.value as FeedbackType)}>
-                <option value="none">None</option>
-                <option value="marks">Marks</option>
-                <option value="letter">Letter</option>
-                <option value="text">Text</option>
-              </select>
+          {(toolbarEnabled ? feedbackSelectValue : activeKind) === 'none' ? (
+            <div className="text-sm text-gray-600">
+              {toolbarEnabled ? 'Pick a feedback type above to begin.' : 'Choose a feedback type above to begin.'}
             </div>
-          )}
-
-          {(activeKind !== 'none') ? (
+          ) : (
             <>
-              {activeKind === 'marks' && (
+              {(toolbarEnabled ? feedbackSelectValue === 'marks' : activeKind === 'marks') && (
                 <div className="flex items-end gap-2">
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">Marks</label>
@@ -627,7 +645,7 @@ const StudentCanvasCarousel: React.FC<Props> = ({
                 </div>
               )}
 
-              {activeKind === 'letter' && (
+              {(toolbarEnabled ? feedbackSelectValue === 'letter' : activeKind === 'letter') && (
                 <div className="flex items-end gap-2">
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">Grade</label>
@@ -641,7 +659,7 @@ const StudentCanvasCarousel: React.FC<Props> = ({
                 </div>
               )}
 
-              {activeKind === 'text' && (
+              {(toolbarEnabled ? feedbackSelectValue === 'text' : activeKind === 'text') && (
                 <div>
                   <label className="block text-xs text-gray-600 mb-1">Comment</label>
                   <textarea className="w-full min-h-[100px] px-3 py-2 border rounded-md" value={draftComment} onChange={(e) => setDraftComment(e.target.value)} placeholder="Write feedback..." />
@@ -653,24 +671,19 @@ const StudentCanvasCarousel: React.FC<Props> = ({
                 </div>
               )}
             </>
-          ) : (
-            <div className="text-sm text-gray-600">
-              {classScopedControls ? 'Feedback is disabled for this activity.' : 'Choose a feedback type to begin.'}
-            </div>
           )}
 
-            {/* Hint if we still cannot infer a class for this student */}
-            {!classId && current && currentClassId === undefined && (
+          {/* Class inference hints (when no explicit classId) */}
+          {!classId && current && currentClassId === undefined && (
             <div className="mt-2 text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded p-2">
-                Resolving this student’s class…
+              Resolving this student’s class…
             </div>
-            )}
-            {!classId && current && currentClassId === null && (
+          )}
+          {!classId && current && currentClassId === null && (
             <div className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
-                Couldn’t infer a class for this student in the current course. They might not be enrolled.
+              Couldn’t infer a class for this student in the current course. They might not be enrolled.
             </div>
-            )}
-
+          )}
         </div>
       </div>
     </div>
