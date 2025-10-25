@@ -28,6 +28,10 @@ import AdminClassForm from './pages/admin/AdminClassForm';
 
 import LessonRedirect from './pages/LessonRedirect';
 
+import ClassAnalyticsPage from './pages/analytics/ClassAnalyticsPage';
+import AnalyticsHomePage from './pages/analytics/AnalyticsHomePage';
+
+
 // Error Boundary Component
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -158,7 +162,11 @@ function App() {
               <Route path="/login" element={<LoginPage />} />
               <Route path="/" element={<Layout><HomePage /></Layout>} />
               <Route path="/unauthorized" element={<Layout><UnauthorizedPage /></Layout>} />
-
+              <Route
+                path="/courses/:courseId/classes/:classId/lessons/:lessonId/analytics"
+                element={<ClassAnalyticsPage />}
+              />
+              <Route path="/analytics" element={<AnalyticsHomePage />} />
               {/* Debug and Test routes */}
               <Route path="/test" element={<Layout><TestRouteContent /></Layout>} />
               <Route

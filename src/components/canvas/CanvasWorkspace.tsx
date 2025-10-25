@@ -13,6 +13,7 @@ import { STUDENT_COLORS, STROKE_WIDTHS } from '../../types/canvas.types';
 import { canvasService, offlineCanvasService } from '../../services/canvasService';
 import CanvasToolbar from './CanvasToolbar';
 import { getEffectiveLock } from '../../services/feedbackService';
+import { analyticsService } from '../../services/analyticsService'; // ⬅️ NEW
 
 type LockContext = {
   classId: string;
@@ -20,6 +21,17 @@ type LockContext = {
   slotIndex: number;
   /** The student whose canvas this is (typically the session owner). */
   studentId: string;
+};
+
+type AnalyticsContext = {
+  /** The active viewer's id (student usually). */
+  userId: string;
+  classId: string;
+  courseId: string;
+  lessonId: string;
+  slotIndex: number;
+  /** Optional; if omitted we’ll use the live session id when available. */
+  sessionId?: string;
 };
 
 type BaseProps = {
@@ -30,6 +42,8 @@ type BaseProps = {
   lockContext?: LockContext;
   /** Optional lock polling interval (ms). Default: 20000. */
   lockPollMs?: number;
+  /** Optional analytics context for focus/heartbeat/stroke events. */
+  analyticsContext?: AnalyticsContext; // ⬅️ NEW
 };
 
 type BySessionId = BaseProps & {
@@ -84,6 +98,18 @@ const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = (props) => {
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
   const drawingPointsRef = useRef<Point[]>([]);
   const nextOrderRef = useRef<number>(1);
+
+  // Helper to build analytics ctx (when available)
+  const getAnalyticsCtx = useCallback((): (AnalyticsContext & { sessionId: string }) | null => {
+    if (!props.analyticsContext) return null;
+    // Prefer live session id when ready; else fall back to provided one
+    const sid =
+      (isBySessionId(props) ? props.sessionId : undefined) ||
+      session?.id ||
+      props.analyticsContext.sessionId;
+    if (!sid) return null;
+    return { ...props.analyticsContext, sessionId: sid };
+  }, [props, session?.id]);
 
   // --- Session fetch ----------------------------------------------------------
   useEffect(() => {
@@ -224,6 +250,56 @@ const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = (props) => {
     };
   }, [props.lockContext, props.lockPollMs]);
 
+  // --- Analytics: focus/blur + heartbeat -------------------------------------
+  useEffect(() => {
+    if (!props.analyticsContext) return;
+    if (forcedReadOnly) return;
+
+    let stopHeartbeat: (() => void) | null = null;
+
+    const baseCtx = getAnalyticsCtx();
+    // If we still don't have a session id yet, wait for it (effect re-runs on session?.id)
+    if (!baseCtx) return;
+
+    const start = () => {
+      analyticsService.log({ ...baseCtx, eventType: 'focus' });
+      if (stopHeartbeat) stopHeartbeat();
+      stopHeartbeat = analyticsService.startHeartbeat(baseCtx, 15000);
+    };
+    const stop = () => {
+      analyticsService.log({ ...baseCtx, eventType: 'blur' });
+      if (stopHeartbeat) {
+        stopHeartbeat();
+        stopHeartbeat = null;
+      }
+    };
+    const onVis = () => (document.visibilityState === 'visible' ? start() : stop());
+
+    window.addEventListener('focus', start);
+    window.addEventListener('blur', stop);
+    document.addEventListener('visibilitychange', onVis);
+
+    // initial
+    if (document.visibilityState === 'visible') start();
+
+    return () => {
+      window.removeEventListener('focus', start);
+      window.removeEventListener('blur', stop);
+      document.removeEventListener('visibilitychange', onVis);
+      stop();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    forcedReadOnly,
+    session?.id,
+    props.analyticsContext?.userId,
+    props.analyticsContext?.classId,
+    props.analyticsContext?.courseId,
+    props.analyticsContext?.lessonId,
+    props.analyticsContext?.slotIndex,
+    props.analyticsContext?.sessionId,
+  ]);
+
   // --- Canvas drawing/resize --------------------------------------------------
   const redraw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -341,6 +417,21 @@ const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = (props) => {
     } catch (err) {
       console.error('[CanvasWorkspace] pushStroke failed, rolling back', err);
       setStrokes((prev) => prev.filter((s) => s.id !== optimistic.id));
+    } finally {
+      // Analytics: stroke
+      const a = getAnalyticsCtx();
+      if (a) {
+        analyticsService.log({
+          ...a,
+          eventType: 'stroke',
+          meta: {
+            points: points.length,
+            tool: state.currentTool,
+            width: state.currentWidth,
+            color: state.currentColor,
+          },
+        });
+      }
     }
   };
 
@@ -417,6 +508,9 @@ const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = (props) => {
       }
     } catch (e) {
       console.error('Undo delete failed', e);
+    } finally {
+      const a = getAnalyticsCtx();
+      if (a) analyticsService.log({ ...a, eventType: 'undo' });
     }
   };
 
@@ -429,6 +523,9 @@ const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = (props) => {
     } catch (e) {
       console.error('Clear server failed, restoring local strokes', e);
       setStrokes(prev);
+    } finally {
+      const a = getAnalyticsCtx();
+      if (a) analyticsService.log({ ...a, eventType: 'clear' });
     }
   };
 

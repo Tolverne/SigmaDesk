@@ -244,6 +244,15 @@ const CanvasSlot: React.FC<CanvasSlotProps> = ({
               },
             }
           : {})}
+        // ⬇️ NEW: pass analyticsContext so time/attempts/heartbeats are logged on the student canvas
+        analyticsContext={{
+          userId: viewerUserId,
+          classId: classId ?? '',
+          courseId: courseId ?? '',
+          lessonId,
+          slotIndex,
+          sessionId: sessionId!, // CanvasWorkspace will also pick up the live sessionId once ready
+        }}
       />
     </div>
   );

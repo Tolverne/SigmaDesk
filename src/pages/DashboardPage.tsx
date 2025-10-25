@@ -15,7 +15,6 @@ const DashboardPage: React.FC = () => {
 
   // Load enrolled courses once the user is known; abort safely on unmount/nav
   useEffect(() => {
-    // If not signed in, clear any previous data
     if (!user?.id) {
       setEnrolledCourses([]);
       setLoadingCourses(false);
@@ -34,9 +33,7 @@ const DashboardPage: React.FC = () => {
         const courses = await courseService.getEnrolledCourses(user.id, { signal });
         if (!signal.aborted) setEnrolledCourses(courses);
       } catch (err: any) {
-        if (err?.name === 'AbortError') {
-          // silently ignore aborts
-        } else {
+        if (err?.name !== 'AbortError') {
           console.error('Error loading enrolled courses:', err);
           if (!signal.aborted) setCoursesError('Failed to load your courses. Please try again.');
         }
@@ -53,7 +50,6 @@ const DashboardPage: React.FC = () => {
     try {
       await signOut();
     } finally {
-      // Keep providers mounted; navigate client-side
       navigate('/login', { replace: true });
     }
   };
@@ -71,6 +67,8 @@ const DashboardPage: React.FC = () => {
         return 'bg-gray-100 text-gray-800';
     }
   };
+
+  const role = profile?.role;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -103,8 +101,8 @@ const DashboardPage: React.FC = () => {
 
               <div className="flex items-center">
                 <span className="text-gray-600 w-32">Role:</span>
-                <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getRoleBadgeColor(profile?.role)}`}>
-                  {profile?.role?.toUpperCase() || 'PENDING'}
+                <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getRoleBadgeColor(role)}`}>
+                  {role?.toUpperCase() || 'PENDING'}
                 </span>
               </div>
 
@@ -118,15 +116,15 @@ const DashboardPage: React.FC = () => {
           {/* Role-specific content */}
           <div className="mt-8 p-4 bg-gray-50 rounded-lg">
             <h3 className="text-lg font-semibold text-gray-700 mb-3">
-              {profile?.role === 'teacher' && 'Teacher Tools'}
-              {profile?.role === 'admin' && 'Admin Controls'}
-              {profile?.role === 'super_admin' && 'Super Admin Panel'}
-              {profile?.role === 'student' && 'Student Resources'}
-              {!profile?.role && 'Getting Started'}
+              {role === 'teacher' && 'Teacher Tools'}
+              {role === 'admin' && 'Admin Controls'}
+              {role === 'super_admin' && 'Super Admin Panel'}
+              {role === 'student' && 'Student Resources'}
+              {!role && 'Getting Started'}
             </h3>
 
             <div className="space-y-2 text-gray-600">
-              {profile?.role === 'student' && (
+              {role === 'student' && (
                 <>
                   <p>• View enrolled courses</p>
                   <p>• Complete assignments</p>
@@ -134,7 +132,7 @@ const DashboardPage: React.FC = () => {
                 </>
               )}
 
-              {profile?.role === 'teacher' && (
+              {role === 'teacher' && (
                 <>
                   <p>• Manage classes</p>
                   <p>• Review student work</p>
@@ -142,16 +140,16 @@ const DashboardPage: React.FC = () => {
                 </>
               )}
 
-              {(profile?.role === 'admin' || profile?.role === 'super_admin') && (
+              {(role === 'admin' || role === 'super_admin') && (
                 <>
                   <p>• Manage users</p>
                   <p>• Create courses</p>
                   <p>• View analytics</p>
-                  {profile?.role === 'super_admin' && <p>• System configuration</p>}
+                  {role === 'super_admin' && <p>• System configuration</p>}
                 </>
               )}
 
-              {!profile?.role && (
+              {!role && (
                 <p>Your account is being set up. Please wait for role assignment.</p>
               )}
             </div>
@@ -160,7 +158,7 @@ const DashboardPage: React.FC = () => {
           {/* Quick Actions */}
           <div className="mt-8">
             <h3 className="text-lg font-semibold text-gray-700 mb-3">Quick Actions</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <button
                 className="p-4 bg-sigma-blue text-white rounded-lg hover:bg-blue-700 transition-colors"
                 onClick={() => navigate('/courses')}
@@ -168,7 +166,15 @@ const DashboardPage: React.FC = () => {
                 Browse Courses
               </button>
 
-              {profile?.role !== 'student' && (
+              {/* NEW: Universal Analytics entry point */}
+              <button
+                className="p-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                onClick={() => navigate('/analytics')}
+              >
+                Analytics
+              </button>
+
+              {role !== 'student' && (
                 <button
                   className="p-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                   onClick={() => navigate('/manage')}
@@ -187,7 +193,7 @@ const DashboardPage: React.FC = () => {
           </div>
 
           {/* My Courses Section */}
-          {profile?.role === 'student' && (
+          {role === 'student' && (
             <div className="mt-8">
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-lg font-semibold text-gray-700">My Courses</h3>
@@ -211,11 +217,7 @@ const DashboardPage: React.FC = () => {
                   <p className="text-red-600 mb-3">{coursesError}</p>
                   <button
                     onClick={() => {
-                      // manual retry: clear cache & re-run effect by toggling user id dependency
                       courseService.clearCache();
-                      // trigger a re-load by simulating a dependency change
-                      // (or navigate away and back)
-                      // simplest here: re-run the fetch directly
                       const controller = new AbortController();
                       const { signal } = controller;
                       setLoadingCourses(true);
@@ -255,8 +257,8 @@ const DashboardPage: React.FC = () => {
             </div>
           )}
 
-          {/* For teachers and admins, show a different courses section */}
-          {(profile?.role === 'teacher' || profile?.role === 'admin' || profile?.role === 'super_admin') && (
+          {/* For teachers/admins */}
+          {(role === 'teacher' || role === 'admin' || role === 'super_admin') && (
             <div className="mt-8">
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-lg font-semibold text-gray-700">Course Management</h3>
@@ -269,7 +271,7 @@ const DashboardPage: React.FC = () => {
               </div>
               <div className="text-center py-8 bg-gray-50 rounded-lg">
                 <p className="text-gray-600">
-                  {profile?.role === 'teacher'
+                  {role === 'teacher'
                     ? 'View and manage courses you teach'
                     : 'Create and manage all courses in the system'}
                 </p>
