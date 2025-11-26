@@ -47,14 +47,14 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
         <div className="text-center max-w-md mx-auto p-6">
           <div className="relative mb-6">
-            <div className="animate-spin rounded-full h-16 w-16 border-4 border-gray-200 border-t-sigma-blue mx-auto"></div>
+            <div className="animate-spin rounded-full h-16 w-16 border-4 border-gray-200 border-t-io-primary mx-auto"></div>
           </div>
           <h3 className="text-lg font-semibold text-gray-800 mb-2">
             Loading...
           </h3>
           <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
             <div 
-              className="bg-sigma-blue h-2 rounded-full transition-all duration-1000"
+              className="bg-primary h-2 rounded-full transition-all duration-1000"
               style={{ width: `${progress}%` }}
             />
           </div>
@@ -84,7 +84,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
                 setTimeoutReached(false);
                 window.location.reload();
               }}
-              className="w-full px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700"
+              className="w-full px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-700"
             >
               Retry
             </button>
@@ -119,7 +119,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
             </p>
             <button
               onClick={() => { window.location.href = '/'; }}
-              className="w-full px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700"
+              className="w-full px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-700"
             >
               Go Home
             </button>

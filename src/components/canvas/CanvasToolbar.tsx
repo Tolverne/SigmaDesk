@@ -30,7 +30,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
         <button
           onClick={() => onToolChange('pen')}
           className={`px-3 py-2 rounded-md flex items-center space-x-1 ${
-            canvasState.currentTool === 'pen' ? 'bg-sigma-blue text-white' : 'bg-white text-gray-700 border'
+            canvasState.currentTool === 'pen' ? 'bg-primary text-white' : 'bg-white text-gray-700 border'
           }`}
           aria-label="Pen tool"
         >
@@ -41,7 +41,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
         <button
           onClick={() => onToolChange('eraser')}
           className={`px-3 py-2 rounded-md flex items-center space-x-1 ${
-            canvasState.currentTool === 'eraser' ? 'bg-sigma-blue text-white' : 'bg-white text-gray-700 border'
+            canvasState.currentTool === 'eraser' ? 'bg-primary text-white' : 'bg-white text-gray-700 border'
           }`}
           aria-label="Eraser tool"
         >
@@ -60,7 +60,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
                 key={c}
                 onClick={() => onColorChange(c)}
                 className={`w-5 h-5 rounded-full border ${
-                  canvasState.currentColor === c ? 'ring-2 ring-offset-2 ring-sigma-blue' : ''
+                  canvasState.currentColor === c ? 'ring-2 ring-offset-2 ring-io-primary' : ''
                 }`}
                 style={{ backgroundColor: c }}
                 aria-label={`Color ${c}`}

@@ -211,7 +211,7 @@ breadcrumbItems.push({ label: lesson?.title || 'Lesson' });
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sigma-blue"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-io-primary"></div>
       </div>
     );
   }
@@ -229,7 +229,7 @@ breadcrumbItems.push({ label: lesson?.title || 'Lesson' });
           <div className="space-x-4">
             <button
               onClick={() => navigate(`/courses/${courseId}`)}
-              className="px-6 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+              className="px-6 py-2 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors"
             >
               Back to Course
             </button>
@@ -327,7 +327,7 @@ breadcrumbItems.push({ label: lesson?.title || 'Lesson' });
               {prevLessonId && (
                 <button
                   onClick={handlePrevLesson}
-                  className="flex items-center px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700"
+                  className="flex items-center px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-700"
                 >
                   <ChevronLeft className="w-4 h-4 mr-1" />
                   Previous Lesson
@@ -338,7 +338,7 @@ breadcrumbItems.push({ label: lesson?.title || 'Lesson' });
             {nextLessonId && (
               <button
                 onClick={handleNextLesson}
-                className="flex items-center px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700"
+                className="flex items-center px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-700"
               >
                 Next Lesson
                 <ChevronRight className="w-4 h-4 ml-1" />

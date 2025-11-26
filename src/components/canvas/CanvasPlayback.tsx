@@ -243,7 +243,7 @@ const CanvasPlayback: React.FC<CanvasPlaybackProps> = ({
             {!isPlaying ? (
               <button
                 onClick={play}
-                className="px-3 py-2 rounded-md bg-sigma-blue text-white flex items-center gap-2"
+                className="px-3 py-2 rounded-md bg-primary text-white flex items-center gap-2"
               >
                 <Play className="w-4 h-4" /><span>Play</span>
               </button>

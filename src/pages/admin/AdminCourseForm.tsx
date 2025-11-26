@@ -116,7 +116,7 @@ const AdminCourseForm: React.FC = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sigma-blue"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-io-primary"></div>
       </div>
     );
   }
@@ -155,7 +155,7 @@ const AdminCourseForm: React.FC = () => {
                 id="title"
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-sigma-blue focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-io-primary focus:border-transparent"
                 placeholder="e.g., Mathematics 10"
                 required
               />
@@ -170,7 +170,7 @@ const AdminCourseForm: React.FC = () => {
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 rows={4}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-sigma-blue focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-io-primary focus:border-transparent"
                 placeholder="Describe what students will learn in this course..."
               />
             </div>
@@ -181,7 +181,7 @@ const AdminCourseForm: React.FC = () => {
                 id="is_published"
                 checked={formData.is_published}
                 onChange={(e) => setFormData({ ...formData, is_published: e.target.checked })}
-                className="w-4 h-4 text-sigma-blue border-gray-300 rounded focus:ring-sigma-blue"
+                className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-io-primary"
               />
               <label htmlFor="is_published" className="ml-2 text-sm text-gray-700">
                 Publish course (make it visible to students)
@@ -193,7 +193,7 @@ const AdminCourseForm: React.FC = () => {
             <button
               type="submit"
               disabled={saving}
-              className="flex items-center px-6 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center px-6 py-2 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Save className="w-5 h-5 mr-2" />
               {saving ? 'Saving...' : isEdit ? 'Update Course' : 'Create Course'}
@@ -217,7 +217,7 @@ const AdminCourseForm: React.FC = () => {
             <h2 className="text-lg font-semibold text-gray-900">Topics</h2>
             <button
               onClick={() => navigate(`/admin/courses/${courseId}/topics/new`)}
-              className="flex items-center px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+              className="flex items-center px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors"
             >
               <Plus className="w-5 h-5 mr-2" />
               Add Topic
@@ -230,7 +230,7 @@ const AdminCourseForm: React.FC = () => {
               <p className="text-gray-600 mb-4">No topics yet. Add your first topic to start building the course.</p>
               <button
                 onClick={() => navigate(`/admin/courses/${courseId}/topics/new`)}
-                className="px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+                className="px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors"
               >
                 Add First Topic
               </button>
@@ -258,7 +258,7 @@ const AdminCourseForm: React.FC = () => {
                     <div className="flex items-center gap-2 ml-4">
                       <button
                         onClick={() => navigate(`/admin/courses/${courseId}/topics/${topic.id}`)}
-                        className="p-2 text-gray-600 hover:text-sigma-blue hover:bg-blue-50 rounded-md transition-colors"
+                        className="p-2 text-gray-600 hover:text-primary hover:bg-blue-50 rounded-md transition-colors"
                         title="Edit Topic"
                       >
                         <Edit className="w-5 h-5" />

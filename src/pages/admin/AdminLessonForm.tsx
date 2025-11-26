@@ -94,7 +94,7 @@ const AdminLessonForm: React.FC = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sigma-blue"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-io-primary"></div>
       </div>
     );
   }
@@ -132,7 +132,7 @@ const AdminLessonForm: React.FC = () => {
                 id="title"
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-sigma-blue focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-io-primary focus:border-transparent"
                 placeholder="e.g., Solving Linear Equations"
                 required
               />
@@ -147,7 +147,7 @@ const AdminLessonForm: React.FC = () => {
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 rows={2}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-sigma-blue focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-io-primary focus:border-transparent"
                 placeholder="Brief overview of this lesson..."
               />
             </div>
@@ -161,7 +161,7 @@ const AdminLessonForm: React.FC = () => {
                 id="estimated_minutes"
                 value={formData.estimated_minutes}
                 onChange={(e) => setFormData({ ...formData, estimated_minutes: parseInt(e.target.value) || 0 })}
-                className="w-32 px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-sigma-blue focus:border-transparent"
+                className="w-32 px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-io-primary focus:border-transparent"
                 min="1"
                 required
               />
@@ -199,7 +199,7 @@ const AdminLessonForm: React.FC = () => {
                 value={formData.content_latex}
                 onChange={(e) => setFormData({ ...formData, content_latex: e.target.value })}
                 rows={20}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-sigma-blue focus:border-transparent font-mono text-sm"
+                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-io-primary focus:border-transparent font-mono text-sm"
                 placeholder={`\\section{Introduction}
 This is an example lesson.
 
@@ -249,7 +249,7 @@ This is an example lesson.
           <button
             type="submit"
             disabled={saving}
-            className="flex items-center px-6 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center px-6 py-2 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Save className="w-5 h-5 mr-2" />
             {saving ? 'Saving...' : isEdit ? 'Update Lesson' : 'Create Lesson'}

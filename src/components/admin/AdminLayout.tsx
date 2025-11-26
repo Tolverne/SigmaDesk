@@ -60,7 +60,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
               </Link>
               <div className="h-6 w-px bg-gray-300" />
               <div className="flex items-center">
-                <span className="text-2xl font-bold text-sigma-blue mr-2">Σ</span>
+                <span className="text-2xl font-bold text-primary mr-2">Σ</span>
                 <h1 className="text-xl font-bold text-gray-900">Admin Portal</h1>
               </div>
             </div>
@@ -99,7 +99,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
                     to={item.href}
                     className={`flex items-center px-4 py-3 text-sm font-medium rounded-md transition-colors ${
                       active
-                        ? 'bg-sigma-blue text-white'
+                        ? 'bg-primary text-white'
                         : 'text-gray-700 hover:bg-gray-100'
                     }`}
                   >

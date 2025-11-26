@@ -70,7 +70,7 @@ const AdminCourses: React.FC = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sigma-blue"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-io-primary"></div>
       </div>
     );
   }
@@ -93,7 +93,7 @@ const AdminCourses: React.FC = () => {
         </div>
         <button
           onClick={() => navigate('/admin/courses/new')}
-          className="flex items-center px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+          className="flex items-center px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors"
         >
           <Plus className="w-5 h-5 mr-2" />
           New Course
@@ -107,7 +107,7 @@ const AdminCourses: React.FC = () => {
           <p className="text-gray-600 mb-6">Get started by creating your first course</p>
           <button
             onClick={() => navigate('/admin/courses/new')}
-            className="px-6 py-3 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+            className="px-6 py-3 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors"
           >
             Create Course
           </button>
@@ -161,7 +161,7 @@ const AdminCourses: React.FC = () => {
                     
                     <button
                       onClick={() => navigate(`/admin/courses/${course.id}`)}
-                      className="p-2 text-gray-600 hover:text-sigma-blue hover:bg-blue-50 rounded-md transition-colors"
+                      className="p-2 text-gray-600 hover:text-primary hover:bg-blue-50 rounded-md transition-colors"
                       title="Edit Course"
                     >
                       <Edit className="w-5 h-5" />

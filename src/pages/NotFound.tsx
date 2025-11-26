@@ -20,7 +20,7 @@ const NotFoundPage: React.FC = () => {
         <div className="flex flex-wrap justify-center gap-4">
           <button
             onClick={() => navigate('/')}
-            className="px-6 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700"
+            className="px-6 py-2 bg-primary text-white rounded-md hover:bg-blue-700"
           >
             Go Home
           </button>

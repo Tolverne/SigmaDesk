@@ -160,7 +160,7 @@ const DashboardPage: React.FC = () => {
             <h3 className="text-lg font-semibold text-gray-700 mb-3">Quick Actions</h3>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <button
-                className="p-4 bg-sigma-blue text-white rounded-lg hover:bg-blue-700 transition-colors"
+                className="p-4 bg-primary text-white rounded-lg hover:bg-blue-700 transition-colors"
                 onClick={() => navigate('/courses')}
               >
                 Browse Courses
@@ -200,7 +200,7 @@ const DashboardPage: React.FC = () => {
                 {enrolledCourses.length > 2 && (
                   <button
                     onClick={() => navigate('/courses')}
-                    className="text-sigma-blue hover:underline text-sm"
+                    className="text-primary hover:underline text-sm"
                   >
                     View all courses →
                   </button>
@@ -209,7 +209,7 @@ const DashboardPage: React.FC = () => {
 
               {loadingCourses ? (
                 <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sigma-blue mx-auto"></div>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-io-primary mx-auto"></div>
                   <p className="mt-2 text-sm text-gray-600">Loading courses...</p>
                 </div>
               ) : coursesError ? (
@@ -232,7 +232,7 @@ const DashboardPage: React.FC = () => {
                         })
                         .finally(() => setLoadingCourses(false));
                     }}
-                    className="px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+                    className="px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors"
                   >
                     Try Again
                   </button>
@@ -248,7 +248,7 @@ const DashboardPage: React.FC = () => {
                   <p className="text-gray-600 mb-3">You haven't enrolled in any courses yet.</p>
                   <button
                     onClick={() => navigate('/courses')}
-                    className="px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+                    className="px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors"
                   >
                     Browse Available Courses
                   </button>
@@ -264,7 +264,7 @@ const DashboardPage: React.FC = () => {
                 <h3 className="text-lg font-semibold text-gray-700">Course Management</h3>
                 <button
                   onClick={() => navigate('/courses')}
-                  className="text-sigma-blue hover:underline text-sm"
+                  className="text-primary hover:underline text-sm"
                 >
                   Manage courses →
                 </button>
@@ -277,7 +277,7 @@ const DashboardPage: React.FC = () => {
                 </p>
                 <button
                   onClick={() => navigate('/courses')}
-                  className="mt-3 px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+                  className="mt-3 px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors"
                 >
                   Go to Courses
                 </button>

@@ -497,7 +497,7 @@ const AdminClassForm: React.FC = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sigma-blue"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-io-primary"></div>
       </div>
     );
   }
@@ -540,7 +540,7 @@ const AdminClassForm: React.FC = () => {
                   setSelectedStudent('');
                   if (classId) setTimeout(loadCourseEnrollments, 0);
                 }}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-sigma-blue focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-io-primary focus:border-transparent"
                 required
                 disabled={isEdit}
               >
@@ -567,7 +567,7 @@ const AdminClassForm: React.FC = () => {
                 id="name"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-sigma-blue focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-io-primary focus:border-transparent"
                 placeholder="e.g., MATH10-A"
                 required
               />
@@ -585,7 +585,7 @@ const AdminClassForm: React.FC = () => {
                 id="display_name"
                 value={formData.display_name}
                 onChange={(e) => setFormData({ ...formData, display_name: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-sigma-blue focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-io-primary focus:border-transparent"
                 placeholder="e.g., Period 1 - Morning Session"
               />
               <p className="text-xs text-gray-500 mt-1">
@@ -598,7 +598,7 @@ const AdminClassForm: React.FC = () => {
             <button
               type="submit"
               disabled={saving}
-              className="flex items-center px-6 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center px-6 py-2 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Save className="w-5 h-5 mr-2" />
               {saving ? 'Saving...' : isEdit ? 'Update Class' : 'Create Class'}
@@ -631,7 +631,7 @@ const AdminClassForm: React.FC = () => {
             <select
               value={selectedTeacher}
               onChange={(e) => setSelectedTeacher(e.target.value)}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-sigma-blue focus:border-transparent"
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-io-primary focus:border-transparent"
             >
               <option value="">Select a teacher to assign...</option>
               {teacherOptions.map(opt => (
@@ -643,7 +643,7 @@ const AdminClassForm: React.FC = () => {
             <button
               onClick={handleAssignTeacher}
               disabled={!selectedTeacher}
-              className="flex items-center px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Plus className="w-5 h-5 mr-2" />
               Assign
@@ -717,7 +717,7 @@ const AdminClassForm: React.FC = () => {
             <select
               value={selectedStudent}
               onChange={(e) => setSelectedStudent(e.target.value)}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-sigma-blue focus:border-transparent"
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-io-primary focus:border-transparent"
             >
               <option value="">Select a student to enroll...</option>
               {studentOptions.map(opt => (
@@ -729,7 +729,7 @@ const AdminClassForm: React.FC = () => {
             <button
               onClick={handleEnrollStudent}
               disabled={!selectedStudent || !formData.course_id}
-              className="flex items-center px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Plus className="w-5 h-5 mr-2" />
               Enroll

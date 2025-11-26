@@ -31,6 +31,8 @@ import LessonRedirect from './pages/LessonRedirect';
 import ClassAnalyticsPage from './pages/analytics/ClassAnalyticsPage';
 import AnalyticsHomePage from './pages/analytics/AnalyticsHomePage';
 
+import LandingPage from './pages/marketing/LandingPage';
+
 
 // Error Boundary Component
 class ErrorBoundary extends React.Component<
@@ -65,7 +67,7 @@ class ErrorBoundary extends React.Component<
             <div className="space-y-3">
               <button
                 onClick={() => window.location.reload()}
-                className="w-full px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700"
+                className="w-full px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-700"
               >
                 Reload Application
               </button>
@@ -160,7 +162,7 @@ function App() {
             <Routes>
               {/* Public routes */}
               <Route path="/login" element={<LoginPage />} />
-              <Route path="/" element={<Layout><HomePage /></Layout>} />
+              <Route path="/" element={<LandingPage />} />
               <Route path="/unauthorized" element={<Layout><UnauthorizedPage /></Layout>} />
               <Route
                 path="/courses/:courseId/classes/:classId/lessons/:lessonId/analytics"

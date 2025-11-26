@@ -182,7 +182,7 @@ const handleSelectClass = async (classId: string) => {
         
         <div className="flex justify-center items-center min-h-[400px]">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sigma-blue mx-auto mb-4"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-io-primary mx-auto mb-4"></div>
             <p className="text-gray-600">Loading classes...</p>
           </div>
         </div>
@@ -207,7 +207,7 @@ const handleSelectClass = async (classId: string) => {
           <div className="space-x-4">
             <button
               onClick={handleRetry}
-              className="px-6 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+              className="px-6 py-2 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors"
             >
               Try Again
             </button>
@@ -245,7 +245,7 @@ const handleSelectClass = async (classId: string) => {
           </p>
           <button
             onClick={() => navigate('/courses')}
-            className="px-6 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+            className="px-6 py-2 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors"
           >
             Back to Courses
           </button>
@@ -274,14 +274,14 @@ const handleSelectClass = async (classId: string) => {
           <button
             key={cls.id}
             onClick={() => handleSelectClass(cls.id)}
-            className="bg-white border-2 border-gray-200 rounded-lg p-6 hover:border-sigma-blue hover:shadow-lg transition-all text-left group focus:outline-none focus:ring-2 focus:ring-sigma-blue focus:ring-offset-2"
+            className="bg-white border-2 border-gray-200 rounded-lg p-6 hover:border-io-primary hover:shadow-lg transition-all text-left group focus:outline-none focus:ring-2 focus:ring-io-primary focus:ring-offset-2"
             aria-label={`Select ${cls.display_name || cls.name}`}
           >
             <div className="flex items-start justify-between mb-4">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-2">
-                  <GraduationCap className="w-5 h-5 text-sigma-blue" />
-                  <h3 className="text-xl font-semibold text-gray-900 group-hover:text-sigma-blue transition-colors">
+                  <GraduationCap className="w-5 h-5 text-primary" />
+                  <h3 className="text-xl font-semibold text-gray-900 group-hover:text-primary transition-colors">
                     {cls.display_name || cls.name}
                   </h3>
                 </div>
@@ -304,7 +304,7 @@ const handleSelectClass = async (classId: string) => {
               </span>
             </div>
             
-            <div className="flex items-center justify-end text-sigma-blue text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="flex items-center justify-end text-primary text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity">
               <span>View class</span>
               <ChevronRight className="w-4 h-4 ml-1" />
             </div>

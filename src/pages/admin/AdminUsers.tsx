@@ -140,7 +140,7 @@ const AdminUsers: React.FC = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sigma-blue"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-io-primary"></div>
       </div>
     );
   }
@@ -155,7 +155,7 @@ const AdminUsers: React.FC = () => {
         </div>
         <button
           onClick={() => navigate('/admin/users/invite')}
-          className="flex items-center px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+          className="flex items-center px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors"
         >
           <Plus className="w-5 h-5 mr-2" />
           Invite User
@@ -175,7 +175,7 @@ const AdminUsers: React.FC = () => {
             onClick={() => setRoleFilter(stat.filter)}
             className={`p-4 rounded-lg border-2 transition-all text-left ${
               roleFilter === stat.filter
-                ? 'border-sigma-blue bg-blue-50'
+                ? 'border-io-primary bg-blue-50'
                 : 'border-gray-200 bg-white hover:border-gray-300'
             }`}
           >
@@ -195,14 +195,14 @@ const AdminUsers: React.FC = () => {
               placeholder="Search by name or email..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-sigma-blue focus:border-transparent"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-io-primary focus:border-transparent"
             />
           </div>
 
           <select
             value={roleFilter}
             onChange={(e) => setRoleFilter(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-sigma-blue focus:border-transparent"
+            className="px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-io-primary focus:border-transparent"
           >
             <option value="all">All Roles</option>
             <option value="student">Students</option>
@@ -227,7 +227,7 @@ const AdminUsers: React.FC = () => {
           {!searchTerm && roleFilter === 'all' && (
             <button
               onClick={() => navigate('/admin/users/invite')}
-              className="px-6 py-3 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+              className="px-6 py-3 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors"
             >
               Invite First User
             </button>
@@ -255,7 +255,7 @@ const AdminUsers: React.FC = () => {
                   <tr key={u.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
-                        <div className="w-10 h-10 rounded-full bg-sigma-blue text-white flex items-center justify-center font-semibold">
+                        <div className="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center font-semibold">
                           {(u.full_name || u.email || '?').charAt(0).toUpperCase()}
                         </div>
                         <div className="ml-3">

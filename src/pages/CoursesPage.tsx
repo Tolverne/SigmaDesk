@@ -69,7 +69,7 @@ const CoursesPage: React.FC = () => {
     return (
       <div className="flex justify-center items-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sigma-blue mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-io-primary mx-auto mb-4"></div>
           <h3 className="text-lg font-semibold text-gray-800 mb-2">
             Loading Courses...
           </h3>
@@ -90,7 +90,7 @@ const CoursesPage: React.FC = () => {
           <div className="space-x-4">
             <button
               onClick={handleRetry}
-              className="px-6 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+              className="px-6 py-2 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors"
             >
               Try Again
             </button>
@@ -149,7 +149,7 @@ const CoursesPage: React.FC = () => {
           {!user && (
             <button
               onClick={() => navigate('/login')}
-              className="px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+              className="px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors"
             >
               Sign In
             </button>

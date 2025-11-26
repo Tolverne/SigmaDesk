@@ -44,7 +44,7 @@ const HomePage: React.FC = () => {
     <div className="space-y-6">
       <div className="bg-white rounded-lg shadow p-6">
         <h1 className="text-3xl font-bold text-gray-800 mb-4">
-          Welcome to SigmaDesk
+          Welcome to IO Education
         </h1>
         <p className="text-gray-600 mb-6">
           Digital workbook platform for modern education. This is your development
@@ -91,8 +91,8 @@ const HomePage: React.FC = () => {
         </div>
 
         {/* Next Steps */}
-        <div className="mt-8 p-4 bg-sigma-blue bg-opacity-10 rounded-lg">
-          <h3 className="text-lg font-semibold text-sigma-blue mb-2">
+        <div className="mt-8 p-4 bg-primary bg-opacity-10 rounded-lg">
+          <h3 className="text-lg font-semibold text-primary mb-2">
             Phase 1 Complete!
           </h3>
           <p className="text-sm text-gray-700 mb-2">

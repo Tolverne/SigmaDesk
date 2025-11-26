@@ -193,7 +193,7 @@ const AnalyticsHomePage: React.FC = () => {
                 key={c.id}
                 onClick={() => setSelectedClassId(c.id)}
                 className={`text-left p-3 border rounded hover:bg-gray-50 transition ${
-                  selectedClassId === c.id ? 'border-sigma-blue ring-1 ring-sigma-blue' : 'border-gray-200'
+                  selectedClassId === c.id ? 'border-io-primary ring-1 ring-io-primary' : 'border-gray-200'
                 }`}
               >
                 <div className="text-sm font-semibold text-gray-800">{c.name}</div>

@@ -149,7 +149,7 @@ const LessonRedirect: React.FC = () => {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sigma-blue mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-io-primary mx-auto mb-4"></div>
           <p className="text-gray-600">Authenticating...</p>
         </div>
       </div>
@@ -167,7 +167,7 @@ const LessonRedirect: React.FC = () => {
           <div className="space-x-4">
             <button
               onClick={() => navigate('/courses')}
-              className="px-6 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+              className="px-6 py-2 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors"
             >
               Back to Courses
             </button>
@@ -187,7 +187,7 @@ const LessonRedirect: React.FC = () => {
   return (
     <div className="flex items-center justify-center min-h-screen">
       <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sigma-blue mx-auto mb-4"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-io-primary mx-auto mb-4"></div>
         <p className="text-gray-600">Loading lesson...</p>
         <p className="text-sm text-gray-500 mt-2">
           {profile?.role === 'teacher' || profile?.role === 'admin' || profile?.role === 'super_admin'

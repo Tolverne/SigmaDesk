@@ -60,7 +60,7 @@ const CanvasViewer: React.FC<CanvasViewerProps> = ({
             onClick={() => setMode('draw')}
             className={`px-4 py-2 rounded-md font-medium transition-colors ${
               mode === 'draw'
-                ? 'bg-sigma-blue text-white'
+                ? 'bg-primary text-white'
                 : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
             }`}
           >
@@ -70,7 +70,7 @@ const CanvasViewer: React.FC<CanvasViewerProps> = ({
             onClick={() => setMode('playback')}
             className={`px-4 py-2 rounded-md font-medium transition-colors ${
               mode === 'playback'
-                ? 'bg-sigma-blue text-white'
+                ? 'bg-primary text-white'
                 : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
             }`}
           >

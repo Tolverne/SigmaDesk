@@ -120,7 +120,7 @@ const AdminClasses: React.FC = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sigma-blue"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-io-primary"></div>
       </div>
     );
   }
@@ -134,7 +134,7 @@ const AdminClasses: React.FC = () => {
         </div>
         <button
           onClick={() => navigate('/admin/classes/new')}
-          className="flex items-center px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+          className="flex items-center px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors"
         >
           <Plus className="w-5 h-5 mr-2" />
           New Class
@@ -148,7 +148,7 @@ const AdminClasses: React.FC = () => {
           <p className="text-gray-600 mb-6">Create class sections to organize your courses</p>
           <button
             onClick={() => navigate('/admin/classes/new')}
-            className="px-6 py-3 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+            className="px-6 py-3 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors"
           >
             Create First Class
           </button>

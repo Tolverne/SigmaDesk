@@ -122,7 +122,7 @@ const AdminDashboard: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <button
           onClick={() => navigate('/admin/courses/new')}
-          className="p-6 border-2 border-dashed border-gray-300 rounded-lg hover:border-sigma-blue hover:bg-blue-50 transition-colors"
+          className="p-6 border-2 border-dashed border-gray-300 rounded-lg hover:border-io-primary hover:bg-blue-50 transition-colors"
         >
           <BookOpen className="w-8 h-8 text-gray-400 mb-2" />
           <h3 className="font-semibold text-gray-900">Create Course</h3>
@@ -131,7 +131,7 @@ const AdminDashboard: React.FC = () => {
 
         <button
           onClick={() => navigate('/admin/classes/new')}
-          className="p-6 border-2 border-dashed border-gray-300 rounded-lg hover:border-sigma-blue hover:bg-blue-50 transition-colors"
+          className="p-6 border-2 border-dashed border-gray-300 rounded-lg hover:border-io-primary hover:bg-blue-50 transition-colors"
         >
           <GraduationCap className="w-8 h-8 text-gray-400 mb-2" />
           <h3 className="font-semibold text-gray-900">Create Class</h3>
@@ -140,7 +140,7 @@ const AdminDashboard: React.FC = () => {
 
         <button
           onClick={() => navigate('/admin/users/invite')}
-          className="p-6 border-2 border-dashed border-gray-300 rounded-lg hover:border-sigma-blue hover:bg-blue-50 transition-colors"
+          className="p-6 border-2 border-dashed border-gray-300 rounded-lg hover:border-io-primary hover:bg-blue-50 transition-colors"
         >
           <Users className="w-8 h-8 text-gray-400 mb-2" />
           <h3 className="font-semibold text-gray-900">Invite Users</h3>

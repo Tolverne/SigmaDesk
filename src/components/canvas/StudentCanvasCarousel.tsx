@@ -639,7 +639,7 @@ const StudentCanvasCarousel: React.FC<Props> = ({
                   {typeof config?.max_marks === 'number' && classScopedControls && (
                     <div className="pb-2 text-sm text-gray-600">/ {config.max_marks}</div>
                   )}
-                  <button onClick={handleSaveEntry} disabled={entrySaving} className="ml-auto inline-flex items-center gap-1 px-3 py-2 rounded-md bg-sigma-blue text-white hover:bg-blue-700">
+                  <button onClick={handleSaveEntry} disabled={entrySaving} className="ml-auto inline-flex items-center gap-1 px-3 py-2 rounded-md bg-primary text-white hover:bg-blue-700">
                     <Save className="w-4 h-4" /> Save
                   </button>
                 </div>
@@ -653,7 +653,7 @@ const StudentCanvasCarousel: React.FC<Props> = ({
                       {gradeLetters.map((g) => <option key={g} value={g}>{g}</option>)}
                     </select>
                   </div>
-                  <button onClick={handleSaveEntry} disabled={entrySaving} className="ml-auto inline-flex items-center gap-1 px-3 py-2 rounded-md bg-sigma-blue text-white hover:bg-blue-700">
+                  <button onClick={handleSaveEntry} disabled={entrySaving} className="ml-auto inline-flex items-center gap-1 px-3 py-2 rounded-md bg-primary text-white hover:bg-blue-700">
                     <Save className="w-4 h-4" /> Save
                   </button>
                 </div>
@@ -664,7 +664,7 @@ const StudentCanvasCarousel: React.FC<Props> = ({
                   <label className="block text-xs text-gray-600 mb-1">Comment</label>
                   <textarea className="w-full min-h-[100px] px-3 py-2 border rounded-md" value={draftComment} onChange={(e) => setDraftComment(e.target.value)} placeholder="Write feedback..." />
                   <div className="mt-2 text-right">
-                    <button onClick={handleSaveEntry} disabled={entrySaving} className="inline-flex items-center gap-1 px-3 py-2 rounded-md bg-sigma-blue text-white hover:bg-blue-700">
+                    <button onClick={handleSaveEntry} disabled={entrySaving} className="inline-flex items-center gap-1 px-3 py-2 rounded-md bg-primary text-white hover:bg-blue-700">
                       <Save className="w-4 h-4" /> Save
                     </button>
                   </div>

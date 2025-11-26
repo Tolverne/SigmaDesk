@@ -89,7 +89,7 @@ const CourseCard: React.FC<CourseCardProps> = ({
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
               <div 
-                className="bg-sigma-blue h-2 rounded-full transition-all"
+                className="bg-primary h-2 rounded-full transition-all"
                 style={{ width: `${course.progress_percentage}%` }}
               />
             </div>
@@ -101,7 +101,7 @@ const CourseCard: React.FC<CourseCardProps> = ({
           {isEnrolled ? (
             <button
               onClick={handleContinueLearning}
-              className="w-full px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+              className="w-full px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors"
             >
               Continue Learning
             </button>

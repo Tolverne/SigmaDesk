@@ -29,16 +29,16 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   };
 
   return (
-    <div className="min-h-screen bg-sigma-light">
+    <div className="min-h-screen bg-soft">
       {/* Header */}
       <header className="bg-white shadow-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
               <Link to="/" className="flex items-center hover:opacity-80 transition-opacity">
-                <span className="text-2xl font-bold text-sigma-blue">Σ</span>
+                <span className="text-2xl font-bold text-primary">Σ</span>
                 <span className="ml-2 text-xl font-semibold text-gray-800">
-                  SigmaDesk
+                  IO Education
                 </span>
               </Link>
               <span className="ml-4 text-sm text-gray-500 italic hidden sm:inline">
@@ -52,7 +52,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   <Link
                     to="/courses"
                     className={`text-gray-600 hover:text-gray-800 transition-colors ${
-                      location.pathname.startsWith('/courses') ? 'text-sigma-blue font-semibold' : ''
+                      location.pathname.startsWith('/courses') ? 'text-primary font-semibold' : ''
                     }`}
                   >
                     Courses
@@ -61,7 +61,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   <Link
                     to="/dashboard"
                     className={`text-gray-600 hover:text-gray-800 transition-colors ${
-                      location.pathname === '/dashboard' ? 'text-sigma-blue font-semibold' : ''
+                      location.pathname === '/dashboard' ? 'text-primary font-semibold' : ''
                     }`}
                   >
                     Dashboard
@@ -107,7 +107,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               ) : (
                 <Link
                   to="/login"
-                  className="px-4 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors"
+                  className="px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors"
                 >
                   Sign In
                 </Link>

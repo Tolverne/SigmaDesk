@@ -77,7 +77,7 @@ const CourseNavigation: React.FC<CourseNavigationProps> = ({
                     onClick={() => navigateToLesson(lesson.id)}
                     className={`w-full flex items-center p-2 rounded-md transition-colors ${
                       currentLessonId === lesson.id
-                        ? 'bg-sigma-blue text-white'
+                        ? 'bg-primary text-white'
                         : 'hover:bg-gray-100 text-gray-700'
                     }`}
                   >

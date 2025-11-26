@@ -103,7 +103,7 @@ const AdminUserInvite: React.FC = () => {
               id="email"
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-sigma-blue focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-io-primary focus:border-transparent"
               placeholder="user@example.com"
               required
             />
@@ -121,7 +121,7 @@ const AdminUserInvite: React.FC = () => {
               id="full_name"
               value={formData.full_name}
               onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-sigma-blue focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-io-primary focus:border-transparent"
               placeholder="John Smith"
               required
             />
@@ -135,7 +135,7 @@ const AdminUserInvite: React.FC = () => {
               id="role"
               value={formData.role}
               onChange={(e) => setFormData({ ...formData, role: e.target.value as any })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-sigma-blue focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-io-primary focus:border-transparent"
             >
               <option value="student">Student</option>
               <option value="teacher">Teacher</option>
@@ -151,7 +151,7 @@ const AdminUserInvite: React.FC = () => {
           <button
             type="submit"
             disabled={saving}
-            className="flex items-center px-6 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center px-6 py-2 bg-primary text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <UserPlus className="w-5 h-5 mr-2" />
             {saving ? 'Preparing...' : 'Prepare Invite'}

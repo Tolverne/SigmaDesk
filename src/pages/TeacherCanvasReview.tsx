@@ -38,7 +38,7 @@ const TeacherCanvasReview: React.FC = () => {
   if (loading) {
     return (
       <div className="py-12 text-center">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-sigma-blue mx-auto" />
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-io-primary mx-auto" />
       </div>
     );
   }
@@ -60,7 +60,7 @@ const TeacherCanvasReview: React.FC = () => {
               {sessions.map((s) => (
                 <div key={s.id} className="py-3 flex items-center justify-between">
                   <div className="flex items-center space-x-3">
-                    <div className="w-9 h-9 rounded-full bg-sigma-blue text-white flex items-center justify-center">
+                    <div className="w-9 h-9 rounded-full bg-primary text-white flex items-center justify-center">
                       <User className="w-5 h-5" />
                     </div>
                     <div>
@@ -75,7 +75,7 @@ const TeacherCanvasReview: React.FC = () => {
 
                   <Link
                     to={`/teacher/canvas/${lessonId}/${s.id}`}
-                    className="px-3 py-2 bg-sigma-blue text-white rounded-md hover:bg-blue-700"
+                    className="px-3 py-2 bg-primary text-white rounded-md hover:bg-blue-700"
                   >
                     Review
                   </Link>
