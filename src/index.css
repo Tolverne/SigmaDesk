@@ -3,162 +3,146 @@
 @tailwind utilities;
 
 /* =========================================================
-   IO Education — Design Tokens (Dark theme by default)
-   These pairs with tailwind.config.js 'io-*' color keys.
+   IO Education — Sapphire/Teal Dark Theme (Global)
    ========================================================= */
 :root {
-  /* Surfaces & text (HSL values only; Tailwind uses hsl(var(--...))) */
-  --io-bg:           222 15% 10%;   /* deep blue-gray */
-  --io-surface:      222 14% 14%;   /* card bg */
-  --io-muted:        222 10% 22%;
-  --io-border:       222 10% 28%;
+  /* Surfaces */
+  --io-bg:           222 16% 9%;
+  --io-surface:      222 18% 14%;
+  --io-surface-2:    222 22% 18%;
+  --io-muted:        222 16% 24%;
+  --io-border:       222 18% 34%;
 
-  --io-text:         45 20% 96%;    /* near-white text */
-  --io-text-muted:   40  8% 72%;
+  /* Typography — lighter */
+  --io-text:         0 0% 99%;
+  --io-text-muted:   0 0% 86%;
 
-  /* Brand — red/orange/yellow spectrum */
-  --io-primary:      8  78% 54%;    /* red-vermillion */
-  --io-primary-fg:   0   0% 100%;
+  /* Brand (Sapphire/Teal) */
+  --io-primary:      210 90% 56%;
+  --io-primary-fg:   0 0% 100%;
+  --io-accent:       174 72% 46%;
+  --io-accent-fg:    200 30% 10%;
 
-  --io-accent:       24 90% 55%;    /* orange */
-  --io-accent-fg:    0   0% 100%;
-
-  --io-highlight:    40 95% 58%;    /* yellow */
-  --io-highlight-fg: 24 28% 18%;
-
-  /* Status */
-  --io-success:      142 55% 45%;
-  --io-danger:       0   72% 55%;
+  /* Extras / status */
+  --io-highlight:    190 92% 64%;
+  --io-highlight-fg: 200 30% 14%;
+  --io-success:      142 56% 48%;
+  --io-danger:       0   74% 56%;
   --io-warning:      38  92% 58%;
 }
 
-/* Optional: light theme overrides if you add a toggle later
-:root.light {
-  --io-bg:           45 20% 98%;
-  --io-surface:      0  0% 100%;
-  --io-muted:        220 12% 94%;
-  --io-border:       220 10% 86%;
-  --io-text:         222 22% 10%;
-  --io-text-muted:   222 10% 40%;
-} */
-
 /* =========================================================
-   Base element resets & typography
+   Base layout & typography
    ========================================================= */
-@layer base {
-  html, body, #root { @apply min-h-screen; }
-  body {
-    background: hsl(var(--io-bg));
-    color: hsl(var(--io-text));
-    margin: 0;
-    font-family:
-      ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-      "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans",
-      "Droid Sans", "Helvetica Neue", Arial, sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    text-rendering: optimizeLegibility;
-  }
+html, body, #root { height: 100%; }
 
-  *, *::before, *::after {
-    border-color: hsl(var(--io-border));
-    transition: background-color .2s ease, color .2s ease, border-color .2s ease;
-  }
+body {
+  margin: 0;
+  background: hsl(var(--io-bg));
+  color: hsl(var(--io-text));
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans",
+    "Droid Sans", "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
-/* =========================================================
-   Compatibility shims (so legacy classes don't 404)
-   Remove once all usages are migrated to io-* utilities.
-   ========================================================= */
-@layer utilities {
-  /* Old “bg-bg / text-text / border-border” style tokens */
-  .bg-bg            { @apply bg-io-bg; }
-  .bg-soft          { @apply bg-io-soft; }              /* maps to io-surface */
-  .text-text        { @apply text-io-text; }
-  .text-muted       { @apply text-io-text-muted; }
-  .text-fg          { @apply text-io-text; }
-  .text-fg-muted    { @apply text-io-text-muted; }
-  .border-border    { @apply border-io-border; }
-
-  /* Old brand-ish aliases */
-  .bg-primary       { @apply bg-io-primary; }
-  .text-primary     { @apply text-io-primary; }
-  .bg-accent        { @apply bg-io-accent; }
-  .text-accent      { @apply text-io-accent; }
+/* Smooth transitions for theme-aware elements */
+*,
+*::before,
+*::after {
+  border-color: hsl(var(--io-border));
+}
+body, a, button, input, textarea, select, .io-surface, .io-card {
+  transition:
+    background-color .2s ease,
+    color .2s ease,
+    border-color .2s ease,
+    box-shadow .2s ease,
+    filter .2s ease;
 }
 
-/* =========================================================
-   Links
-   ========================================================= */
+/* Links */
 a { color: hsl(var(--io-primary)); text-decoration: none; }
 a:hover { color: hsl(var(--io-accent)); text-decoration: underline; }
 
 /* =========================================================
-   Form controls
-   ========================================================= */
-input, textarea, select {
-  background: hsl(var(--io-surface));
-  color: hsl(var(--io-text));
-  border: 1px solid hsl(var(--io-border));
-  border-radius: 0.5rem;
-  outline: none;
-}
-input::placeholder, textarea::placeholder { color: hsl(var(--io-text-muted)); }
-input:focus, textarea:focus, select:focus {
-  box-shadow: 0 0 0 3px hsl(var(--io-primary) / 0.25);
-  border-color: hsl(var(--io-primary));
-}
-
-/* =========================================================
-   Buttons (utility classes complement Tailwind)
+   Buttons (utility-friendly classes)
    ========================================================= */
 .io-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: .5rem;
-  padding: .5rem .875rem;
-  border-radius: 0.75rem;
+  display: inline-flex; align-items: center; gap: .5rem;
+  padding: .6rem 1rem; border-radius: .85rem;
   border: 1px solid hsl(var(--io-border));
-  background: hsl(var(--io-muted));
+  background: hsl(var(--io-surface));
   color: hsl(var(--io-text));
   cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0,0,0,.35);
 }
-.io-btn:hover { background: hsl(var(--io-surface)); }
+.io-btn:hover { background: hsl(var(--io-surface-2)); }
+
 .io-btn-primary {
-  background: hsl(var(--io-primary));
-  border-color: hsl(var(--io-primary));
+  background: linear-gradient(
+    135deg,
+    hsl(var(--io-primary)) 0%,
+    hsl(var(--io-accent)) 100%
+  );
+  border-color: transparent;
   color: hsl(var(--io-primary-fg));
+  box-shadow: 0 12px 30px hsla(210,90%,56%,0.36);
 }
-.io-btn-primary:hover {
-  background: hsl(var(--io-accent));
-  border-color: hsl(var(--io-accent));
+.io-btn-primary:hover { filter: brightness(1.05); }
+
+.io-btn-ghost {
+  background: transparent;
+  border-color: hsl(var(--io-border));
+  color: hsl(var(--io-text));
 }
-.io-btn-ghost { background: transparent; border-color: hsl(var(--io-border)); }
 
 /* =========================================================
    Cards & surfaces
    ========================================================= */
-.io-surface, .io-card {
+.io-card, .io-surface {
   background: hsl(var(--io-surface));
   color: hsl(var(--io-text));
+  border-radius: 1rem;
   border: 1px solid hsl(var(--io-border));
-  border-radius: 1rem; /* matches Tailwind extend: borderRadius.io */
-  box-shadow: 0 6px 24px rgba(0,0,0,.35); /* matches shadow-io */
+  box-shadow: 0 10px 28px rgba(0,0,0,.38);
+  background-image: none;
 }
 
-/* Subtle dividers */
-.hr, .io-divider { height: 1px; background: hsl(var(--io-border)); border: 0; }
+.io-card--emphasis {
+  background:
+    linear-gradient(180deg, hsla(210,90%,56%,0.08), hsla(174,72%,46%,0.08)),
+    hsl(var(--io-surface-2));
+  border: 1px solid hsla(210,90%,56%,0.35);
+  box-shadow: 0 14px 34px hsla(210,90%,20%,0.45);
+  position: relative;
+}
+.io-card--emphasis::before {
+  content: '';
+  position: absolute; inset: -1px; border-radius: inherit;
+  background: linear-gradient(135deg,
+    hsla(210,90%,56%,0.55),
+    hsla(174,72%,46%,0.35)
+  );
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  padding: 1px; pointer-events: none;
+}
 
-/* Muted text */
-.io-muted { color: hsl(var(--io-text-muted)); }
+/* Dividers & muted text */
+.io-divider { height: 1px; background: hsl(var(--io-border)); border: 0; }
+.io-muted   { color: hsl(var(--io-text-muted)); }
 
 /* =========================================================
-   Tables (quick dark styling)
+   Tables
    ========================================================= */
 table {
   width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
+  border-collapse: separate; border-spacing: 0;
   background: hsl(var(--io-surface));
   color: hsl(var(--io-text));
   border: 1px solid hsl(var(--io-border));
@@ -166,12 +150,60 @@ table {
   overflow: hidden;
 }
 th, td { padding: .75rem 1rem; border-bottom: 1px solid hsl(var(--io-border)); }
-thead th { background: hsl(var(--io-muted)); color: hsl(var(--io-text)); text-align: left; }
-tbody tr:hover { background: hsl(var(--io-muted) / 0.5); }
+thead th { background: hsl(var(--io-muted)); text-align: left; }
+tbody tr:hover { background: hsla(210, 20%, 60%, 0.08); }
 
 /* =========================================================
-   Scrollbars (Chromium/WebKit)
+   Global geometric background
+   Mount exactly once: <div class="io-bg-grid" aria-hidden="true" />
    ========================================================= */
+/* ===== IO Education Global Background (brighter sapphire, thicker lines) ===== */
+.io-bg-grid {
+  position: fixed;
+  inset: 0;
+  z-index: -1;            /* stays behind everything */
+  pointer-events: none;
+  background:
+    /* Sapphire/teal glows */
+    radial-gradient(1400px 700px at 55% 64%, hsla(210, 95%, 60%, 0.20) 0%, transparent 70%),
+    radial-gradient(1000px 560px at 20% 22%, hsla(174, 72%, 46%, 0.14) 0%, transparent 68%),
+    radial-gradient(760px 460px  at 86% 22%, hsla(210, 92%, 58%, 0.16) 0%, transparent 64%),
+    hsl(var(--io-bg));
+}
+
+/* Sapphire grid lines overlay (slightly thicker & brighter) */
+.io-bg-grid::before,
+.io-bg-grid::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  /* 56px cells with ~1.5px lines; boosted alpha for readability */
+  background-image:
+    repeating-linear-gradient(0deg,   hsla(210, 95%, 62%, 0.10) 0 1.5px, transparent 1.5px 56px),
+    repeating-linear-gradient(90deg,  hsla(210, 95%, 62%, 0.10) 0 1.5px, transparent 1.5px 56px);
+  mask-image: radial-gradient(85% 85% at 50% 50%, #000 65%, transparent 100%);
+  /* helps on Safari/WebKit */
+  -webkit-mask-image: radial-gradient(85% 85% at 50% 50%, #000 65%, transparent 100%);
+}
+
+/* Slow parallax shimmer so it feels alive */
+.io-bg-grid::after {
+  opacity: 0.75;
+  animation: io-slow-pan 60s linear infinite;
+}
+
+@keyframes io-slow-pan {
+  0%   { transform: translate3d(0, 0, 0) rotate(0deg); }
+  50%  { transform: translate3d(-2.2%, -1.2%, 0) rotate(0.6deg); }
+  100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+}
+
+
+/* =========================================================
+   Selection & scrollbars
+   ========================================================= */
+::selection { background: rgba(56, 189, 248, .25); } /* cyan-ish */
+
 *::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-track { background: hsl(var(--io-bg)); }
 *::-webkit-scrollbar-thumb {
@@ -182,63 +214,121 @@ tbody tr:hover { background: hsl(var(--io-muted) / 0.5); }
 *::-webkit-scrollbar-thumb:hover { background: hsl(var(--io-border)); }
 
 /* =========================================================
-   Legacy custom blocks (themed for dark)
+   Legacy blocks themed
    ========================================================= */
 .video iframe {
   width: 100%;
   aspect-ratio: 16 / 9;
   display: block;
   border: 1px solid hsl(var(--io-border));
-  border-radius: 0.75rem;
+  border-radius: .75rem;
   background: #000;
 }
-
 img { max-width: 100%; height: auto; }
-
 .questions { display: grid; gap: 1rem; }
 .question {
-  padding: .75rem;
-  border-radius: .75rem;
+  padding: .75rem; border-radius: .75rem;
   background: hsl(var(--io-surface));
   box-shadow: 0 0 0 1px hsl(var(--io-border));
 }
 .parts { padding-left: 1.25rem; }
 
 /* =========================================================
-   Utility helpers
+   Prose (if using @tailwind/typography)
    ========================================================= */
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: .25rem;
-  padding: .125rem .5rem;
-  border-radius: 999px;
-  font-size: .75rem;
-  border: 1px solid hsl(var(--io-border));
-  background: hsl(var(--io-muted));
-  color: hsl(var(--io-text));
-}
-.badge--success { background: hsl(var(--io-success) / .15); color: hsl(var(--io-success)); border-color: hsl(var(--io-success) / .35); }
-.badge--danger  { background: hsl(var(--io-danger)  / .15); color: hsl(var(--io-danger));  border-color: hsl(var(--io-danger)  / .35); }
-.badge--warn    { background: hsl(var(--io-warning) / .15); color: hsl(var(--io-warning)); border-color: hsl(var(--io-warning) / .35); }
+.prose { background: transparent; color: hsl(var(--io-text)); }
+.prose :where(h1,h2,h3,h4,strong) { color: hsl(var(--io-text)); }
+.prose :where(p,li,blockquote,figcaption) { color: hsl(var(--io-text-muted)); }
 
-/* Focus ring helper for keyboard users */
+/* =========================================================
+   Focus visible
+   ========================================================= */
 :focus-visible {
   outline: 3px solid hsl(var(--io-highlight));
   outline-offset: 2px;
   border-radius: .5rem;
 }
 
-/* Optional: selection color */
-::selection { background: rgba(255, 179, 71, .25); }
-
-/* TEMP: soften common light utilities on dark (remove as you migrate) */
+/* =========================================================
+   Dark overrides for legacy light utilities
+   Route common light classes to the dark palette globally.
+   ========================================================= */
 @layer utilities {
-  .bg-white        { @apply bg-io-surface !important; }
-  .bg-gray-50      { @apply bg-io-surface/60 !important; }
-  .text-gray-900   { @apply text-io-text !important; }
-  .text-gray-800   { @apply text-io-text !important; }
-  .text-gray-700   { @apply text-io-text-muted !important; }
-  .border-gray-200 { @apply border-io-border !important; }
-  .shadow          { box-shadow: 0 6px 16px rgba(0,0,0,.35), 0 1px 1px rgba(0,0,0,.25) !important; }
+  /* Surfaces */
+  .bg-white,
+  .bg-gray-50,
+  .bg-gray-100,
+  .bg-slate-50,
+  .bg-neutral-50,
+  .bg-zinc-50 {
+    @apply bg-io-surface !important;
+  }
+
+  .bg-gray-200,
+  .bg-slate-100,
+  .bg-neutral-100 {
+    @apply bg-io-surface !important;
+  }
+
+  /* Text */
+  .text-black,
+  .text-gray-900,
+  .text-slate-900,
+  .text-neutral-900,
+  .text-gray-800,
+  .text-slate-800 {
+    @apply text-io-text !important;
+  }
+
+  .text-gray-700,
+  .text-gray-600,
+  .text-slate-700,
+  .text-slate-600,
+  .text-neutral-700,
+  .text-neutral-600 {
+    @apply text-io-text-muted !important;
+  }
+
+  /* Borders & dividers */
+  .border-gray-200,
+  .border-gray-300,
+  .border-slate-200,
+  .border-neutral-200,
+  .divide-gray-200,
+  .divide-slate-200,
+  .divide-neutral-200 {
+    @apply border-io-border !important;
+  }
+
+  /* Shadows on dark */
+  .shadow,
+  .shadow-sm,
+  .shadow-md,
+  .shadow-lg {
+    box-shadow: 0 10px 30px rgba(0,0,0,.45), 0 1px 0 rgba(0,0,0,.3) !important;
+  }
+
+  /* Common “card-like” aliases */
+  .card,
+  .panel,
+  .io-card,
+  .surface {
+    @apply bg-io-surface text-io-text border border-io-border rounded-2xl;
+  }
+}
+
+/* Optional base apply so root inherits dark tokens with Tailwind classes too */
+@layer base {
+  html, body, #root {
+    @apply bg-io-bg text-io-text;
+  }
+}
+
+@layer utilities {
+  .bg-white       { @apply bg-io-surface !important; }
+  .bg-gray-50     { @apply bg-io-surface !important; }
+  .text-gray-900  { @apply text-io-text !important; }
+  .text-gray-800  { @apply text-io-text !important; }
+  .text-gray-700  { @apply text-io-text-muted !important; }
+  .border-gray-200{ @apply border-io-border !important; }
 }

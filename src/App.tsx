@@ -158,24 +158,41 @@ function App() {
     <ErrorBoundary>
       <Router>
         <AuthProvider>
-          <div className="App">
+          {/* App root with global background grid */}
+          <div className="relative min-h-screen bg-transparent">
+            {/* Sapphire/teal animated grid lives behind all content */}
+            <div className="io-bg-grid" aria-hidden />
+
             <Routes>
               {/* Public routes */}
               <Route path="/login" element={<LoginPage />} />
               <Route path="/" element={<LandingPage />} />
               <Route path="/unauthorized" element={<Layout><UnauthorizedPage /></Layout>} />
+
+              {/* Analytics */}
               <Route
                 path="/courses/:courseId/classes/:classId/lessons/:lessonId/analytics"
-                element={<ClassAnalyticsPage />}
+                element={<Layout><ClassAnalyticsPage /></Layout>}
               />
-              <Route path="/analytics" element={<AnalyticsHomePage />} />
-              {/* Debug and Test routes */}
-              <Route path="/test" element={<Layout><TestRouteContent /></Layout>} />
+              <Route path="/analytics" element={<Layout><AnalyticsHomePage /></Layout>} />
+
+              {/* Debug & Test (use dark surface so grid shows) */}
+              <Route
+                path="/test"
+                element={
+                  <Layout>
+                    <div className="p-8 rounded-xl border border-io-border bg-io-surface shadow-io">
+                      <TestRouteContent />
+                    </div>
+                  </Layout>
+                }
+              />
+
               <Route
                 path="/debug"
                 element={
                   <Layout>
-                    <div className="p-8 bg-white rounded-lg shadow">
+                    <div className="p-8 rounded-xl border border-io-border bg-io-surface shadow-io">
                       <h1 className="text-2xl mb-4">Debug Dashboard</h1>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
@@ -196,7 +213,7 @@ function App() {
                                   alert(`Connection failed: ${err}`);
                                 }
                               }}
-                              className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                              className="w-full px-4 py-2 rounded-md bg-io-primary text-io-primary-fg hover:brightness-110"
                             >
                               Test Supabase Connection
                             </button>
@@ -218,28 +235,19 @@ function App() {
                 }
               />
 
-              {/* Course routes - NEW STRUCTURE */}
-              
-              {/* Course list - accessible to all authenticated */}
-              <Route 
-                path="/courses" 
-                element={<Layout><CoursesPage /></Layout>} 
+              {/* Courses */}
+              <Route path="/courses" element={<Layout><CoursesPage /></Layout>} />
+
+              <Route
+                path="/courses/:courseId"
+                element={<Layout><CourseDetailPage /></Layout>}
               />
-              
-              {/* Course detail with optional class context */}
-              {/* This handles both:
-                  - /courses/:courseId (teachers see class selector, students see course)
-                  - /courses/:courseId/classes/:classId (class-aware view) */}
-              <Route 
-                path="/courses/:courseId" 
-                element={<Layout><CourseDetailPage /></Layout>} 
-              />
-              <Route 
-                path="/courses/:courseId/classes/:classId" 
-                element={<Layout><CourseDetailPage /></Layout>} 
+              <Route
+                path="/courses/:courseId/classes/:classId"
+                element={<Layout><CourseDetailPage /></Layout>}
               />
 
-              {/* Lesson with explicit class context (teachers and students after redirect) */}
+              {/* Lessons */}
               <Route
                 path="/courses/:courseId/classes/:classId/lessons/:lessonId"
                 element={
@@ -248,8 +256,6 @@ function App() {
                   </ProtectedRoute>
                 }
               />
-
-              {/* Legacy lesson route - auto-redirects to class-aware URL */}
               <Route
                 path="/courses/:courseId/lessons/:lessonId"
                 element={
@@ -259,36 +265,39 @@ function App() {
                 }
               />
 
-              {/* Admin routes */}
-              <Route 
-                path="/admin/*" 
+              {/* Admin */}
+              <Route
+                path="/admin/*"
                 element={
                   <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
-                    <Routes>
-                      <Route path="/" element={<AdminLayout><AdminDashboard /></AdminLayout>} />
-                      <Route path="/courses" element={<AdminLayout><AdminCourses /></AdminLayout>} />
-                      <Route path="/courses/new" element={<AdminLayout><AdminCourseForm /></AdminLayout>} />
-                      <Route path="/courses/:courseId" element={<AdminLayout><AdminCourseForm /></AdminLayout>} />
-                      <Route path="/courses/:courseId/topics/new" element={<AdminLayout><AdminTopicForm /></AdminLayout>} />
-                      <Route path="/courses/:courseId/topics/:topicId" element={<AdminLayout><AdminTopicForm /></AdminLayout>} />
-                      <Route path="/courses/:courseId/topics/:topicId/lessons/new" element={<AdminLayout><AdminLessonForm /></AdminLayout>} />
-                      <Route path="/courses/:courseId/topics/:topicId/lessons/:lessonId" element={<AdminLayout><AdminLessonForm /></AdminLayout>} />
-                      <Route path="/classes" element={<AdminLayout><AdminClasses /></AdminLayout>} />
-                      <Route path="/classes/new" element={<AdminLayout><AdminClassForm /></AdminLayout>} />
-                      <Route path="/classes/:classId" element={<AdminLayout><AdminClassForm /></AdminLayout>} />
-                      <Route path="/users" element={<AdminLayout><AdminUsers /></AdminLayout>} />
-                      <Route path="/users/invite" element={<AdminLayout><AdminUserInvite /></AdminLayout>} />
-                      <Route path="/settings" element={<AdminLayout><AdminSettings /></AdminLayout>} />
-                    </Routes>
+                    {/* Keep the grid visible by wrapping with Layout once */}
+                    <Layout>
+                      <Routes>
+                        <Route path="/" element={<AdminLayout><AdminDashboard /></AdminLayout>} />
+                        <Route path="/courses" element={<AdminLayout><AdminCourses /></AdminLayout>} />
+                        <Route path="/courses/new" element={<AdminLayout><AdminCourseForm /></AdminLayout>} />
+                        <Route path="/courses/:courseId" element={<AdminLayout><AdminCourseForm /></AdminLayout>} />
+                        <Route path="/courses/:courseId/topics/new" element={<AdminLayout><AdminTopicForm /></AdminLayout>} />
+                        <Route path="/courses/:courseId/topics/:topicId" element={<AdminLayout><AdminTopicForm /></AdminLayout>} />
+                        <Route path="/courses/:courseId/topics/:topicId/lessons/new" element={<AdminLayout><AdminLessonForm /></AdminLayout>} />
+                        <Route path="/courses/:courseId/topics/:topicId/lessons/:lessonId" element={<AdminLayout><AdminLessonForm /></AdminLayout>} />
+                        <Route path="/classes" element={<AdminLayout><AdminClasses /></AdminLayout>} />
+                        <Route path="/classes/new" element={<AdminLayout><AdminClassForm /></AdminLayout>} />
+                        <Route path="/classes/:classId" element={<AdminLayout><AdminClassForm /></AdminLayout>} />
+                        <Route path="/users" element={<AdminLayout><AdminUsers /></AdminLayout>} />
+                        <Route path="/users/invite" element={<AdminLayout><AdminUserInvite /></AdminLayout>} />
+                        <Route path="/settings" element={<AdminLayout><AdminSettings /></AdminLayout>} />
+                      </Routes>
+                    </Layout>
                   </ProtectedRoute>
-                } 
+                }
               />
 
-              {/* 404 - NOT wrapped in Layout */}
+              {/* 404 */}
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
 
-            {/* Debug component - shows in development */}
+            {/* Dev-only helper */}
             <DebugInfo />
           </div>
         </AuthProvider>
@@ -296,5 +305,6 @@ function App() {
     </ErrorBoundary>
   );
 }
+
 
 export default App;

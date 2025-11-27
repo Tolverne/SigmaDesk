@@ -1,122 +1,109 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import IoLogo from '../../components/brand/IOLogo';
 
-const FeatureCard: React.FC<{ title: string; desc: string }> = ({ title, desc }) => (
+const FeatureCard: React.FC<{
+  title: string;
+  desc: string;
+  icon?: React.ReactNode;
+}> = ({ title, desc, icon }) => (
   <div className="io-card p-6">
-    <div className="text-lg font-semibold">{title}</div>
-    <p className="mt-2 text-sm text-io-text-muted">{desc}</p>
+    <div className="flex items-start gap-3">
+      <div className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center bg-io-surface-2 border border-io-border">
+        {icon ?? <span className="text-xl">✨</span>}
+      </div>
+      <div>
+        <h3 className="text-lg font-semibold text-io-text">{title}</h3>
+        <p className="text-io-text-muted mt-1">{desc}</p>
+      </div>
+    </div>
   </div>
 );
 
 const LandingPage: React.FC = () => {
   return (
-    <div>
-      {/* Header */}
-      <header className="sticky top-0 z-20 border-b border-io-border bg-io-bg/80 backdrop-blur">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <IoLogo />
-          <nav className="hidden md:flex items-center gap-6 text-sm text-io-text-muted">
-            <a href="#features" className="hover:text-io-text">Features</a>
-            <a href="#why" className="hover:text-io-text">Why IO</a>
-            <a href="#pricing" className="hover:text-io-text">Pricing</a>
+    <div className="min-h-screen relative">
+      {/* page background */}
+      <div className="io-bg-grid" />
+
+      {/* Top nav with Sign in/Sign up on the right */}
+      <header className="relative z-10">
+        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+          <Link to="/" className="text-xl font-semibold tracking-tight">
+            IO Education
+          </Link>
+          <div className="flex items-center gap-3">
             <Link to="/login" className="io-btn">Sign in</Link>
-            <Link to="/signup" className="io-btn io-btn-primary">Get started</Link>
-          </nav>
+            <Link to="/signup" className="io-btn io-btn-primary">Sign up</Link>
+          </div>
         </div>
       </header>
 
       {/* Hero */}
-      <section className="max-w-7xl mx-auto px-4 py-16 md:py-24">
-        <div className="grid md:grid-cols-2 gap-8 items-center">
-          <div>
-            <h1 className="text-4xl md:text-5xl font-bold leading-tight">
-              Learning tools that feel <span className="text-io-highlight">alive</span>.
-            </h1>
-            <p className="mt-4 text-io-text-muted text-lg">
-              IO Education brings interactive canvases, feedback, and analytics together—so teachers teach more and click less.
-            </p>
-            <div className="mt-6 flex gap-3">
-              <Link to="/signup" className="io-btn io-btn-primary">Create your account</Link>
-              <Link to="/login" className="io-btn io-btn-accent">Sign in</Link>
+      <section className="relative max-w-6xl mx-auto px-6 pt-10 pb-16">
+        <div className="io-card p-10 md:p-14">
+          <div className="grid md:grid-cols-2 gap-8 items-center">
+            <div>
+              <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs border border-io-primary/40 text-io-text-muted mb-4">
+                <span className="w-2 h-2 rounded-full bg-io-primary inline-block" />
+                IO Education
+              </span>
+              <h1 className="text-3xl md:text-4xl font-bold leading-tight text-io-text">
+                A modern workspace for learning, feedback, and analytics.
+              </h1>
+              <p className="text-io-text-muted mt-3">
+                Draw, collaborate, assess, and understand progress — all in one place.
+              </p>
+
+              <div className="mt-6 flex flex-wrap gap-3">
+                <Link to="/login" className="io-btn io-btn-primary">Get started</Link>
+                <Link to="/courses" className="io-btn">Browse Courses</Link>
+              </div>
             </div>
-            <p className="mt-3 text-xs text-io-text-muted">Free plan available • No credit card required</p>
-          </div>
-          <div className="io-card p-0 overflow-hidden">
-            {/* Replace this with an app screenshot later */}
-            <div className="aspect-video bg-io-muted grid place-items-center">
-              <span className="text-io-text-muted">App preview</span>
+
+            <div className="rounded-xl overflow-hidden border border-io-border bg-io-surface-2">
+              <div className="p-6">
+                <div className="grid grid-cols-3 gap-3">
+                  {[...Array(9)].map((_, i) => (
+                    <div key={i} className="h-20 rounded-lg bg-io-surface border border-io-border" />
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
       {/* Features */}
-      <section id="features" className="max-w-7xl mx-auto px-4 py-12">
-        <h2 className="text-2xl font-semibold mb-6">Built for real classrooms</h2>
-        <div className="grid md:grid-cols-3 gap-4">
+      <section className="max-w-6xl mx-auto px-6 pb-14">
+        <div className="grid md:grid-cols-3 gap-6">
           <FeatureCard
-            title="Live canvases"
-            desc="Students write, draw, and annotate. Teachers can lock, review, and replay work."
+            title="Interactive Canvases"
+            desc="Students sketch solutions live; teachers review, lock, and give feedback."
           />
           <FeatureCard
-            title="Actionable feedback"
-            desc="Marks, letters, and comments—release when ready, per student or class."
+            title="Assessment & Feedback"
+            desc="Marks, comments, and release controls designed for classrooms."
           />
           <FeatureCard
-            title="Analytics that help"
-            desc="Time-on-task, attempts, and progress at a glance—find who needs support fast."
+            title="Analytics"
+            desc="Time-on-task, attempts, and progress — by lesson, topic, and class."
           />
         </div>
       </section>
 
-      {/* Why */}
-      <section id="why" className="max-w-7xl mx-auto px-4 py-12">
-        <div className="io-card p-6">
-          <h3 className="text-xl font-semibold">Why IO Education?</h3>
-          <ul className="mt-3 space-y-2 text-sm text-io-text-muted list-disc pl-5">
-            <li>Warm, accessible UI designed for long teaching days</li>
-            <li>Fast workflows—reduce clicks for common tasks</li>
-            <li>Privacy-first architecture with secure roles & policies</li>
-            <li>Works great on school networks and devices</li>
-          </ul>
-        </div>
-      </section>
-
-      {/* Pricing (placeholder) */}
-      <section id="pricing" className="max-w-7xl mx-auto px-4 py-12">
-        <h2 className="text-2xl font-semibold mb-4">Simple pricing</h2>
-        <div className="grid md:grid-cols-3 gap-4">
-          <div className="io-card p-6">
-            <div className="text-lg font-semibold">Starter</div>
-            <div className="text-3xl font-bold mt-1">$0</div>
-            <p className="text-io-text-muted mt-2 text-sm">For individual teachers</p>
+      {/* CTA */}
+      <section className="max-w-6xl mx-auto px-6 pb-24">
+        <div className="io-card p-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-semibold text-io-text">Ready to get started?</h2>
+            <p className="text-io-text-muted mt-1">Log in to your workspace or explore available courses.</p>
           </div>
-          <div className="io-card p-6 border-io-highlight">
-            <div className="text-lg font-semibold">Professional</div>
-            <div className="text-3xl font-bold mt-1">$—</div>
-            <p className="text-io-text-muted mt-2 text-sm">Departments & small schools</p>
-          </div>
-          <div className="io-card p-6">
-            <div className="text-lg font-semibold">Enterprise</div>
-            <div className="text-3xl font-bold mt-1">Contact</div>
-            <p className="text-io-text-muted mt-2 text-sm">Districts & multi-site orgs</p>
+          <div className="flex gap-3">
+            <Link to="/login" className="io-btn io-btn-primary">Sign in</Link>
+            <Link to="/courses" className="io-btn">Explore Courses</Link>
           </div>
         </div>
       </section>
-
-      {/* Footer */}
-      <footer className="border-t border-io-border mt-12">
-        <div className="max-w-7xl mx-auto px-4 py-6 text-sm text-io-text-muted flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <IoLogo wordmark={false} />
-          <div className="flex gap-4">
-            <Link to="/login" className="hover:text-io-text">Sign in</Link>
-            <Link to="/signup" className="hover:text-io-text">Get started</Link>
-            <a href="mailto:hello@ioeducation.com.au" className="hover:text-io-text">Contact</a>
-          </div>
-          <div>© {new Date().getFullYear()} IO Education</div>
-        </div>
-      </footer>
     </div>
   );
 };
